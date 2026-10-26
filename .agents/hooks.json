@@ -1,0 +1,17 @@
+{
+  "milo-approver": {
+    "enabled": true,
+    "PreToolUse": [
+      {
+        "matcher": "run_command|write_file|edit_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node run-milo.js",
+            "timeout": 90
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Milo - AI Agent Approval Layer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo-group">
+        <div class="logo-icon">&#x1F6E1;&#xFE0F;</div>
+        <div>
+          <h1>Milo</h1>
+          <p class="subtitle">Human Approval Layer for AI Agents</p>
+        </div>
+      </div>
+      <div class="status-badge" id="connection-status">
+        <span class="status-dot"></span>
+        <span id="status-text">Connecting...</span>
+      </div>
+    </header>
+
+    <main>
+      <!-- Pending Requests Section -->
+      <section class="section">
+        <div class="section-header">
+          <h2>Pending Approvals</h2>
+          <span class="count-badge" id="pending-count">0</span>
+        </div>
+        <div id="pending-list" class="cards-list">
+          <div class="empty-state" id="empty-pending">
+            <div class="empty-icon">&#x2714;&#xFE0F;</div>
+            <p>No actions pending approval. Agent execution is clear.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- History Section -->
+      <section class="section">
+        <div class="section-header">
+          <h2>Decision History</h2>
+          <button class="btn-text" id="refresh-history">Refresh</button>
+        </div>
+        <div id="history-list" class="history-list">
+          <p class="text-muted">No past decisions recorded yet.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>Milo Agent Approval MVP &bull; Antigravity CLI Integration</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
