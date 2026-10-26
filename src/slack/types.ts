@@ -1,8 +1,10 @@
 export interface SlackConfig {
   botToken?: string;
+  appToken?: string;
   signingSecret?: string;
   channelId?: string;
   enabled: boolean;
+  socketMode?: boolean;
 }
 
 export interface SlackBlockActionPayload {

@@ -3,10 +3,12 @@ import { MiloRequest, MiloDecision } from '../core/types.js';
 import { SlackConfig, SlackBlockActionPayload, SlackMessageRecord } from './types.js';
 import { SlackBlockBuilder } from './block-builder.js';
 import { SlackClient } from './slack-client.js';
+import { SlackSocketClient } from './socket-client.js';
 
 export class SlackService {
   private config: SlackConfig;
   private client: SlackClient;
+  private socketClient?: SlackSocketClient;
   private requestManager: RequestManager;
   private messageRecords = new Map<string, SlackMessageRecord>();
 
@@ -14,23 +16,35 @@ export class SlackService {
     this.requestManager = requestManager;
 
     const envBotToken = process.env.SLACK_BOT_TOKEN;
+    const envAppToken = process.env.SLACK_APP_TOKEN;
     const envSigningSecret = process.env.SLACK_SIGNING_SECRET;
     const envChannelId = process.env.SLACK_CHANNEL_ID;
     const envEnabled = process.env.SLACK_ENABLED !== 'false';
 
     this.config = {
       botToken: config?.botToken || envBotToken,
+      appToken: config?.appToken || envAppToken,
       signingSecret: config?.signingSecret || envSigningSecret,
       channelId: config?.channelId || envChannelId,
       enabled: config?.enabled ?? (Boolean(envBotToken && envChannelId) && envEnabled),
+      socketMode: config?.socketMode ?? Boolean(config?.appToken || envAppToken),
     };
 
     this.client = new SlackClient(this.config.botToken);
     this.registerEventListeners();
+
+    // Start Socket Mode if appToken is configured
+    if (this.config.enabled && this.config.appToken && this.config.socketMode) {
+      this.initSocketMode();
+    }
   }
 
   isConfigured(): boolean {
     return Boolean(this.config.enabled && this.config.botToken && this.config.channelId);
+  }
+
+  isSocketModeActive(): boolean {
+    return Boolean(this.socketClient);
   }
 
   getSigningSecret(): string | undefined {
@@ -39,6 +53,27 @@ export class SlackService {
 
   setMockClient(mockClient: SlackClient) {
     this.client = mockClient;
+  }
+
+  private initSocketMode() {
+    if (!this.config.appToken) return;
+    try {
+      this.socketClient = new SlackSocketClient(this.config.appToken, (payload) =>
+        this.handleInteraction(payload)
+      );
+      this.socketClient.start().catch((err) => {
+        console.error(`[Milo Slack] Failed to start Socket Mode: ${err.message}`);
+      });
+      console.log('⚡ [Milo Slack] Socket Mode initialized with App Token (xapp-...)');
+    } catch (e: any) {
+      console.error(`[Milo Slack] Socket Mode initialization error: ${e.message}`);
+    }
+  }
+
+  stop() {
+    if (this.socketClient) {
+      this.socketClient.stop();
+    }
   }
 
   private registerEventListeners() {
@@ -83,7 +118,7 @@ export class SlackService {
   }
 
   /**
-   * Handles incoming interactive actions (button clicks) from Slack.
+   * Handles incoming interactive actions (button clicks) from Slack (both Socket Mode and HTTP).
    * Prevents duplicate decisions and handles expired requests safely.
    */
   async handleInteraction(payload: SlackBlockActionPayload): Promise<{
@@ -148,12 +183,14 @@ export class SlackService {
 
     // If response_url is present, update the message immediately via response_url
     if (payload.response_url) {
-      this.client.respondToUrl(payload.response_url, {
-        text: resolvedBlocks.text,
-        blocks: resolvedBlocks.blocks,
-      }).catch((err) => {
-        console.warn(`[Milo Slack] response_url update notice: ${err.message}`);
-      });
+      this.client
+        .respondToUrl(payload.response_url, {
+          text: resolvedBlocks.text,
+          blocks: resolvedBlocks.blocks,
+        })
+        .catch((err) => {
+          console.warn(`[Milo Slack] response_url update notice: ${err.message}`);
+        });
     }
 
     return {

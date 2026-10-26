@@ -301,6 +301,33 @@ async function runSlackTests() {
     assert.ok(mockClient.updatedMessages.length >= 1, 'Slack message must be updated when resolved on web');
     console.log('  ✔ Web approval synchronized with Slack message update!');
 
+    // 3F: Test Socket Mode envelope handling
+    console.log('\n[Test 7] Testing Slack Socket Mode Interactive Envelope Dispatch...');
+    const request4 = requestManager.createRequest({
+      agent: 'antigravity',
+      actionType: 'command',
+      toolName: 'run_command',
+      summary: 'Execute: npm run build',
+      description: 'Build project',
+      payload: { CommandLine: 'npm run build' },
+      context: {},
+    });
+
+    const socketEnvelopePayload = {
+      type: 'block_actions',
+      user: { id: 'U55555', name: 'socket_operator' },
+      actions: [{ action_id: 'milo_approve', value: request4.id, type: 'button' }],
+    };
+
+    const socketResult = await slackService.handleInteraction(socketEnvelopePayload as any);
+    assert.equal(socketResult.handled, true);
+    assert.equal(socketResult.decision, 'approved');
+
+    const resolvedReq4 = requestManager.getRequest(request4.id);
+    assert.equal(resolvedReq4?.status, 'approved');
+    assert.match(resolvedReq4?.decisionReason || '', /socket_operator/);
+    console.log('  ✅ SOCKET MODE INTERACTION PROCESSED AND RESOLVED REQUEST!');
+
     console.log('\n✅ ALL SLACK INTEGRATION TESTS PASSED 100%!');
   } finally {
     server.close();

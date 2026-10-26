@@ -119,35 +119,44 @@ Milo is built with strict isolation between the core approval domain, agent-spec
 
 ## 3. Slack Integration Setup
 
-The Slack integration is fully optional and configurable via environment variables. If Slack is not configured, the web approval dashboard continues working normally.
+The Slack integration supports both **Socket Mode** (recommended: zero tunnels or public URLs needed) and traditional HTTP webhooks. If Slack is not configured, the web approval dashboard continues working normally.
 
-### 1. Create a Slack App
-1. Go to [https://api.slack.com/apps](https://api.slack.com/apps) and click **Create New App** -> **From scratch**.
-2. Under **OAuth & Permissions**:
-   - Add the Bot Token Scope: `chat:write`
-   - Click **Install to Workspace** and copy the **Bot User OAuth Token** (`xoxb-...`).
+### Option A: Socket Mode (Recommended — No ngrok or public URLs!)
+1. Go to your app in [https://api.slack.com/apps](https://api.slack.com/apps).
+2. Under **Socket Mode** (left sidebar):
+   - Toggle **Enable Socket Mode** to `ON`.
 3. Under **Basic Information**:
-   - Copy the **Signing Secret**.
-4. Under **Interactivity & Shortcuts**:
-   - Toggle **Interactivity** to `ON`.
-   - Set the **Request URL** to your server endpoint:
-     `https://<your-public-url-or-ngrok>/api/slack/interactions`
-   - Click **Save Changes**.
+   - Scroll to **App-Level Tokens** and click **Generate Token and Scopes**.
+   - Add scope: `connections:write` and copy the token (`xapp-...`).
+4. Under **OAuth & Permissions**:
+   - Add Bot Token Scope: `chat:write`.
+   - Click **Install to Workspace** and copy the **Bot User OAuth Token** (`xoxb-...`).
 5. Invite your bot to your Slack channel:
-   `/invite @YourBotName` in the target channel and copy the Channel ID.
+   `/invite @YourBotName` and copy the Channel ID.
+6. Configure `.env`:
+   ```env
+   PORT=4000
+   SLACK_ENABLED=true
+   SLACK_BOT_TOKEN=xoxb-your-bot-token
+   SLACK_APP_TOKEN=xapp-your-app-level-token
+   SLACK_CHANNEL_ID=C0123456789
+   ```
+   *Notice: In Socket Mode, you do not need to configure any Request URL in Slack. All interactions are delivered over an outbound WebSocket (`wss://wss-primary.slack.com`).*
 
-### 2. Configure Environment Variables
-Copy `.env.example` to `.env`:
-```env
-PORT=4000
-HOST=127.0.0.1
+---
 
-# Slack Bot Configuration
-SLACK_ENABLED=true
-SLACK_BOT_TOKEN=xoxb-your-bot-token
-SLACK_SIGNING_SECRET=your-signing-secret
-SLACK_CHANNEL_ID=C0123456789
-```
+### Option B: HTTP Webhooks (Using ngrok or public domain)
+1. Under **Interactivity & Shortcuts**:
+   - Toggle **Interactivity** to `ON`.
+   - Set **Request URL** to `https://<your-public-url>/api/slack/interactions`.
+2. Configure `.env`:
+   ```env
+   PORT=4000
+   SLACK_ENABLED=true
+   SLACK_BOT_TOKEN=xoxb-your-bot-token
+   SLACK_SIGNING_SECRET=your-signing-secret
+   SLACK_CHANNEL_ID=C0123456789
+   ```
 
 ---
 
