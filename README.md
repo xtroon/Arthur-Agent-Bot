@@ -1,8 +1,8 @@
 # Milo: Human Approval Layer for AI Agents
 
-> **Minimal MVP** starting with Google Antigravity CLI (`agy`).
+> **Minimal MVP** starting with Google Antigravity CLI (`agy`) + Slack Bot Integration.
 
-Milo is a lightweight, human-in-the-loop approval layer for AI coding agents. When an AI agent attempts to run sensitive actions (shell commands, file modifications, etc.), Milo intercepts the action before execution, holds the agent loop, presents the proposed operation on a local web dashboard, and lets a human operator **Approve** or **Reject** it in real time.
+Milo is a lightweight, human-in-the-loop approval layer for AI coding agents. When an AI agent attempts to run sensitive actions (shell commands, file modifications, etc.), Milo intercepts the action before execution, holds the agent loop, presents the proposed operation on a **local web dashboard** and **Slack channel**, and lets a human operator **Approve** or **Reject** it in real time from either platform.
 
 ---
 
@@ -33,7 +33,7 @@ Hooks are declared in a `hooks.json` file inside a customization root directory 
           {
             "type": "command",
             "command": "node run-milo.js",
-            "timeout": 90
+            "timeout": 180
           }
         ]
       }
@@ -46,15 +46,15 @@ Hooks are declared in a `hooks.json` file inside a customization root directory 
 - **Synchronous Blocking is Fully Supported**: Antigravity hooks are executed as external shell commands (`type: "command"`). The CLI pipes JSON into the hook command's `stdin` and **synchronously waits** for the hook process to exit with its JSON verdict on `stdout`. This natural blocking mechanism allows Milo to pause the agent while awaiting human operator input.
 - **Limitation — No Native Asynchronous Webhook Pause/Resume**: Antigravity CLI currently does not support async background resumption (e.g. suspending a session to disk and resuming hours later via an external REST webhook).
 - **Milo's Safe Architecture**:
-  1. The hook script (`hook-runner.js`) acts as a synchronous bridge, keeping the process open and holding the agent loop while waiting for human decision on the local server.
-  2. Each hook has a configured `timeout` (e.g., 60–90 seconds).
+  1. The hook script (`hook-runner.js`) acts as a synchronous bridge, keeping the process open and holding the agent loop while waiting for human decision on the local server or Slack.
+  2. Each hook has a configured `timeout` (e.g., 60–180 seconds).
   3. If the operator does not decide within the window or if the Milo server is offline, the hook **fails safe** by returning `{ "decision": "deny", "reason": "..." }`, guaranteeing that unapproved actions never execute silently.
 
 ---
 
-## 2. Architecture & Adapter Isolation
+## 2. Architecture: Web + Slack Hybrid Approval
 
-Milo is built with strict isolation between the core approval domain and agent-specific integrations.
+Milo is built with strict isolation between the core approval domain, agent-specific adapters, and notification surfaces:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -71,7 +71,7 @@ Milo is built with strict isolation between the core approval domain and agent-s
 │             Milo Hook Bridge (run-milo.js / hook-runner.js) │
 │                                                             │
 │   1. Reads toolCall & context from stdin                    │
-│   2. Calls Milo Server: POST /api/agent/antigravity/pre-tool│
+│   2. POST /api/agent/antigravity/pre-tool                   │
 │   3. Synchronously waits for operator resolution            │
 │   4. Emits {"decision":"allow"} or {"decision":"deny"}      │
 └────────────────────────────┬────────────────────────────────┘
@@ -82,53 +82,79 @@ Milo is built with strict isolation between the core approval domain and agent-s
 │                                                             │
 │   ├── src/core/           (Generic Request & Wait Engine)   │
 │   ├── src/adapters/       (AgentAdapter Interface)          │
-│   │   ├── adapter.interface.ts                              │
-│   │   ├── antigravity.adapter.ts                            │
-│   │   └── index.ts        (Adapter Registry)                │
-│   ├── src/server/         (Express REST API + SSE)          │
-│   └── src/web/public/     (Clean Human Approval Dashboard)  │
+│   ├── src/slack/          (Slack Bot, Block Kit & Webhooks) │
+│   │   ├── types.ts                                          │
+│   │   ├── signature.ts    (HMAC SHA-256 Request Verifier)   │
+│   │   ├── block-builder.ts (Block Kit Message Generator)    │
+│   │   ├── slack-client.ts (Official Web API Client)         │
+│   │   └── slack-service.ts(Interactive Action Handler)      │
+│   ├── src/server/app.ts   (REST API + Web Dashboard + Slack)│
+│   └── src/web/public/     (Web UI: Real-Time SSE Dashboard) │
 └────────────────────────────▲────────────────────────────────┘
                              │
-                             │ Real-Time (SSE / Web UI)
-                             ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      Human Operator                         │
-│             http://localhost:4000 (Web Dashboard)           │
-│             [ ✔ Approve ]        [ ✖ Reject ]               │
-└─────────────────────────────────────────────────────────────┘
+            ┌────────────────┴────────────────┐
+            │                                 │
+     Real-Time (SSE / Web UI)        Slack Web API & Webhook
+            ▼                                 ▼
+┌───────────────────────┐         ┌─────────────────────────┐
+│     Human Operator    │         │       Human Operator    │
+│ http://localhost:4000 │         │   Slack Channel/Mobile  │
+│ [Approve]   [Reject]  │         │  [Approve ✔️] [Reject ✖️]│
+└───────────────────────┘         └─────────────────────────┘
 ```
 
-### Supporting Other AI Agents
-The `AgentAdapter` interface (`src/adapters/adapter.interface.ts`) decouples agent-specific payload formats:
-
-```typescript
-export interface AgentAdapter<TRawInput = any, TRawOutput = any> {
-  readonly agentName: string;
-  parseInput(rawInput: TRawInput): MiloRequestInput;
-  formatResponse(decision: MiloDecision, originalInput?: TRawInput): TRawOutput;
-}
-```
-To add support for another agent (e.g., Claude Code, Cursor, Copilot Workspace), simply implement `AgentAdapter` and register it with `adapterRegistry.register(new CustomAdapter())`.
+### Bi-Directional Synchronization
+- When a request is triggered, it appears **simultaneously** on the Web Dashboard and in your Slack channel.
+- If you click **Approve** on Slack:
+  - The agent loop unblocks immediately and executes the tool.
+  - The Slack message updates to: `✅ APPROVED by @username`.
+  - The Web Dashboard updates to `APPROVED` via real-time SSE.
+- If you click **Approve** on the Web Dashboard:
+  - The agent loop unblocks immediately.
+  - The Slack message updates to: `✅ APPROVED by operator`.
+  - The Web Dashboard updates to `APPROVED`.
+- Duplicate clicks and expired requests are safely rejected.
 
 ---
 
-## 3. Web Dashboard Features
+## 3. Slack Integration Setup
 
-Served at `http://localhost:4000`:
-- **Real-Time Synchronized**: Uses Server-Sent Events (SSE) with fallback polling for instant notification without page refresh.
-- **Action Details**: Displays agent badge, action type (`command`, `file_write`, `file_edit`), raw command or file path preview, and session context (conversation ID, step index).
-- **Decision Controls**:
-  - **Approve**: Resumes the agent loop with `allow`.
-  - **Reject**: Aborts the tool call with `deny` and feeds back the operator's rejection explanation.
-  - **Optional Reason Field**: Lets the operator provide context (e.g., *"Destructive command denied by policy"*).
-- **History View**: Shows a log of recently resolved requests (approved, rejected, or timed out).
+The Slack integration is fully optional and configurable via environment variables. If Slack is not configured, the web approval dashboard continues working normally.
+
+### 1. Create a Slack App
+1. Go to [https://api.slack.com/apps](https://api.slack.com/apps) and click **Create New App** -> **From scratch**.
+2. Under **OAuth & Permissions**:
+   - Add the Bot Token Scope: `chat:write`
+   - Click **Install to Workspace** and copy the **Bot User OAuth Token** (`xoxb-...`).
+3. Under **Basic Information**:
+   - Copy the **Signing Secret**.
+4. Under **Interactivity & Shortcuts**:
+   - Toggle **Interactivity** to `ON`.
+   - Set the **Request URL** to your server endpoint:
+     `https://<your-public-url-or-ngrok>/api/slack/interactions`
+   - Click **Save Changes**.
+5. Invite your bot to your Slack channel:
+   `/invite @YourBotName` in the target channel and copy the Channel ID.
+
+### 2. Configure Environment Variables
+Copy `.env.example` to `.env`:
+```env
+PORT=4000
+HOST=127.0.0.1
+
+# Slack Bot Configuration
+SLACK_ENABLED=true
+SLACK_BOT_TOKEN=xoxb-your-bot-token
+SLACK_SIGNING_SECRET=your-signing-secret
+SLACK_CHANNEL_ID=C0123456789
+```
 
 ---
 
 ## 4. Setup & Quick Start
 
 ### Prerequisites
-- Node.js (v18+ recommended; tested on Node.js v26)
+- Node.js (v18+; tested on Node.js v26)
 - Google Antigravity CLI (`agy`) installed and available on PATH
 
 ### 1. Install & Build
@@ -153,84 +179,35 @@ npm run dev
 ```
 The server will start listening at:
 - **Web Dashboard**: `http://localhost:4000/`
+- **Slack Interactions Endpoint**: `POST http://localhost:4000/api/slack/interactions`
 - **Health Check**: `http://localhost:4000/health`
 - **API**: `http://localhost:4000/api/requests`
-
-### 3. Agent Hook Configuration
-The project is already pre-configured with `.agents/hooks.json`:
-```json
-{
-  "milo-approver": {
-    "enabled": true,
-    "PreToolUse": [
-      {
-        "matcher": "run_command|write_file|edit_file",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node run-milo.js",
-            "timeout": 90
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-### 4. Running Antigravity CLI
-With the Milo server running, run any Antigravity session in this directory:
-```bash
-agy
-```
-Or run in print/headless mode:
-```bash
-agy --dangerously-skip-permissions --print "Run a command to check git status"
-```
-Whenever the agent attempts to run a matched tool:
-1. Execution halts.
-2. The request pops up on `http://localhost:4000`.
-3. Click **Approve** or **Reject** to resume or stop the action!
 
 ---
 
 ## 5. Verification & Testing
 
-Milo includes a comprehensive test suite covering unit tests, mocked E2E child process flows, and real integration against the live `agy.exe` binary.
+Milo includes a comprehensive automated test suite covering unit tests, mocked child process flows, Slack integration, and real integration against the live `agy.exe` binary.
 
-### Unit Tests
-Tests the `AntigravityAdapter` parsing/formatting and `RequestManager` lifecycle/timeouts:
+### Run All Tests
 ```bash
-npx tsx test/unit.test.ts
+npm run test:all
 ```
 
-### End-to-End Hook Flow Tests
-Tests child-process stdin/stdout communication, HTTP synchronization, approvals, rejections, and offline fail-safe handling:
-```bash
-npx tsx test/e2e-hook.test.ts
-```
-
-### Real `agy.exe` Live Integration Test
-Tests the live `agy` CLI binary executing real actions intercepted by Milo's pre-tool hook:
-```bash
-npx tsx test/live-agy-integration.test.ts
-```
-
-Output:
-```text
-=== REAL AGY CLI + MILO APPROVAL LAYER LIVE TEST ===
-[1] Milo Server started on http://127.0.0.1:4000
-[2] Testing real agy CLI with Human APPROVAL...
-  ✔ Milo Server matched request: 4430b414-1586-4288-876c-218367461c8c
-  ✔ Simulating human operator clicking "Approve" on Milo Dashboard...
-  ✔ agy CLI exited with code 0 (output: MILO_TEST_APPROVED)
-  ✅ REAL AGY APPROVAL FLOW VERIFIED!
-
-[3] Testing real agy CLI with Human REJECTION...
-  ✔ Milo Server matched request: f41104ce-2a90-4db8-a2ab-44a9883f3d1f
-  ✔ Simulating human operator clicking "Reject" on Milo Dashboard...
-  ✔ agy CLI exited with code 0 (denied by pre-tool hook)
-  ✅ REAL AGY REJECTION FLOW VERIFIED!
-
-✅ ALL REAL AGY INTEGRATION TESTS PASSED 100%!
-```
+### Individual Test Suites
+- **Unit Tests** (Adapters & Request Manager):
+  ```bash
+  npx tsx test/unit.test.ts
+  ```
+- **End-to-End Hook Flow Tests** (Child process stdin/stdout, approval, rejection, offline fail-safe):
+  ```bash
+  npx tsx test/e2e-hook.test.ts
+  ```
+- **Slack Integration Tests** (HMAC SHA-256 signature verification, Block Kit builder, live button click execution, duplicate prevention, and web synchronization):
+  ```bash
+  npx tsx test/slack.test.ts
+  ```
+- **Real `agy.exe` Live Integration Test** (Live CLI binary intercepted by Milo):
+  ```bash
+  npx tsx test/live-agy-integration.test.ts
+  ```

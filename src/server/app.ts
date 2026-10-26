@@ -4,6 +4,9 @@ import { fileURLToPath } from 'url';
 import { RequestManager, defaultRequestManager } from '../core/request-manager.js';
 import { adapterRegistry } from '../adapters/index.js';
 import { MiloRequestInput } from '../core/types.js';
+import { SlackService } from '../slack/slack-service.js';
+import { verifySlackSignature } from '../slack/signature.js';
+import { SlackBlockActionPayload } from '../slack/types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,10 +16,31 @@ function getParam(param: string | string[] | undefined): string {
   return param || '';
 }
 
-export function createApp(requestManager: RequestManager = defaultRequestManager) {
+export function createApp(
+  requestManager: RequestManager = defaultRequestManager,
+  slackService: SlackService = new SlackService(requestManager)
+) {
   const app = express();
 
-  app.use(express.json({ limit: '10mb' }));
+  // Support urlencoded (Slack interactions) and JSON, capturing rawBody for signature verification
+  app.use(
+    express.urlencoded({
+      extended: true,
+      limit: '10mb',
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf.toString('utf8');
+      },
+    })
+  );
+
+  app.use(
+    express.json({
+      limit: '10mb',
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf.toString('utf8');
+      },
+    })
+  );
 
   // Serve static UI files from web/public
   const publicDir = path.resolve(__dirname, '../../src/web/public');
@@ -24,7 +48,11 @@ export function createApp(requestManager: RequestManager = defaultRequestManager
 
   // Health check
   app.get('/health', (_req: Request, res: Response) => {
-    res.json({ status: 'ok', service: 'milo-approval-server' });
+    res.json({
+      status: 'ok',
+      service: 'milo-approval-server',
+      slackEnabled: slackService.isConfigured(),
+    });
   });
 
   // GET /api/requests - list requests
@@ -59,7 +87,7 @@ export function createApp(requestManager: RequestManager = defaultRequestManager
     res.status(201).json({ success: true, request });
   });
 
-  // POST /api/requests/:id/decision - approve or reject
+  // POST /api/requests/:id/decision - approve or reject from Web UI or API
   app.post('/api/requests/:id/decision', (req: Request, res: Response) => {
     const id = getParam(req.params.id);
     const { decision, reason } = req.body;
@@ -109,6 +137,57 @@ export function createApp(requestManager: RequestManager = defaultRequestManager
       res.json(responsePayload);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/slack/interactions - Slack Interactive Webhook (Buttons)
+  app.post('/api/slack/interactions', async (req: Request, res: Response) => {
+    const signingSecret = slackService.getSigningSecret();
+    const rawBody = (req as any).rawBody || '';
+    const signature = (req.headers['x-slack-signature'] as string) || '';
+    const timestamp = (req.headers['x-slack-request-timestamp'] as string) || '';
+
+    // Verify signature if signing secret is configured or if signature headers are provided
+    if (signingSecret || signature) {
+      const verification = verifySlackSignature({
+        signingSecret: signingSecret || '',
+        requestSignature: signature,
+        timestamp,
+        rawBody,
+      });
+
+      if (!verification.valid) {
+        console.warn(`[Milo Slack] Unauthorized interaction attempt: ${verification.error}`);
+        res.status(401).send(`Unauthorized: ${verification.error}`);
+        return;
+      }
+    }
+
+    try {
+      let payload: SlackBlockActionPayload;
+      if (typeof req.body.payload === 'string') {
+        payload = JSON.parse(req.body.payload);
+      } else if (req.body.payload && typeof req.body.payload === 'object') {
+        payload = req.body.payload;
+      } else {
+        payload = req.body;
+      }
+
+      const result = await slackService.handleInteraction(payload);
+
+      // Return updated blocks to Slack so the message reflects the final status
+      if (result.updatedBlocks) {
+        res.status(200).json({
+          replace_original: true,
+          blocks: result.updatedBlocks,
+          text: result.message,
+        });
+      } else {
+        res.status(200).send(result.message);
+      }
+    } catch (err: any) {
+      console.error(`[Milo Slack] Interaction error: ${err.message}`);
+      res.status(500).send(`Internal error processing Slack interaction: ${err.message}`);
     }
   });
 

@@ -3,7 +3,7 @@ function parseArgs() {
     const args = process.argv.slice(2);
     let serverUrl = process.env.MILO_SERVER_URL || 'http://127.0.0.1:4000';
     let agentName = 'antigravity';
-    let timeoutSeconds = parseInt(process.env.MILO_TIMEOUT_SEC || '55', 10);
+    let timeoutSeconds = parseInt(process.env.MILO_TIMEOUT_SEC || '180', 10);
     let fallbackPolicy = process.env.MILO_FALLBACK === 'allow' ? 'allow' : 'deny';
     for (let i = 0; i < args.length; i++) {
         if (args[i] === '--server' && args[i + 1]) {
@@ -76,6 +76,19 @@ function sendPostRequest(urlStr, payload, timeoutMs) {
         req.end();
     });
 }
+function formatToolSummary(toolCall) {
+    if (!toolCall)
+        return 'Unknown tool';
+    const name = toolCall.name || 'tool';
+    const args = toolCall.args || {};
+    if (name === 'run_command') {
+        return `Command: ${args.CommandLine || args.command || '(empty)'}`;
+    }
+    if (name === 'write_file' || name === 'edit_file') {
+        return `${name}: ${args.Path || args.path || '(path)'}`;
+    }
+    return `${name}(${JSON.stringify(args)})`;
+}
 async function main() {
     const options = parseArgs();
     // Read agent payload from stdin
@@ -103,15 +116,29 @@ async function main() {
             process.exit(0);
         }
     }
+    const toolSummary = formatToolSummary(inputPayload.toolCall);
+    // Notify immediately in the terminal / conversation stream
+    process.stderr.write(`\n------------------------------------------------------------\n`);
+    process.stderr.write(`🛡️  [Milo] Approval Required: ${toolSummary}\n`);
+    process.stderr.write(`👉 Pending on Dashboard: ${options.serverUrl}/\n`);
+    process.stderr.write(`⏳ Waiting for approval (or click Approve on dashboard)...\n`);
+    process.stderr.write(`------------------------------------------------------------\n\n`);
     // Send to Milo approval server
     const endpoint = `${options.serverUrl}/api/agent/${options.agentName}/pre-tool?timeout=${options.timeoutSeconds}`;
     const networkTimeoutMs = (options.timeoutSeconds + 5) * 1000;
     try {
         const agentDecision = await sendPostRequest(endpoint, inputPayload, networkTimeoutMs);
+        if (agentDecision.decision === 'allow') {
+            process.stderr.write(`✅ [Milo] Approved on dashboard! Auto-approving execution...\n\n`);
+        }
+        else {
+            process.stderr.write(`❌ [Milo] Rejected on dashboard: ${agentDecision.reason || 'No reason provided'}\n\n`);
+        }
         // Print the supported decision format to stdout for the agent CLI
         console.log(JSON.stringify(agentDecision));
     }
     catch (err) {
+        process.stderr.write(`⚠️  [Milo] Error or timeout: ${err.message}\n\n`);
         if (options.fallbackPolicy === 'allow') {
             console.log(JSON.stringify({ decision: 'allow' }));
         }

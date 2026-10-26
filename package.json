@@ -9,7 +9,9 @@
     "start": "node dist/server/index.js",
     "dev": "tsx src/server/index.ts",
     "test": "node --test dist/test/unit.test.js || tsx test/unit.test.ts",
-    "test:e2e": "tsx test/e2e-hook.test.ts"
+    "test:e2e": "tsx test/e2e-hook.test.ts",
+    "test:slack": "tsx test/slack.test.ts",
+    "test:all": "tsx test/unit.test.ts; tsx test/e2e-hook.test.ts; tsx test/slack.test.ts"
   },
   "keywords": [
     "ai",

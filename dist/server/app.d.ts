@@ -1,2 +1,3 @@
 import { RequestManager } from '../core/request-manager.js';
-export declare function createApp(requestManager?: RequestManager): import("express-serve-static-core").Express;
+import { SlackService } from '../slack/slack-service.js';
+export declare function createApp(requestManager?: RequestManager, slackService?: SlackService): import("express-serve-static-core").Express;

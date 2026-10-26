@@ -1,6 +1,6 @@
 {
   "milo-approver": {
-    "enabled": true,
+    "enabled": false,
     "PreToolUse": [
       {
         "matcher": "run_command|write_file|edit_file",
