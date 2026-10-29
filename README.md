@@ -31,7 +31,12 @@ Arthur is an agent-agnostic gateway that gives you full oversight and control ov
 ```bash
 npx arthur-agent-bot install-hooks
 ```
-*(This sets up `.agents/hooks.json` in your repository).*
+*(This sets up `.agents/hooks.json` and the resilient hook runner in your repository).*
+
+You can also pair your phone upfront at any time:
+```bash
+npx arthur-agent-bot pair
+```
 
 ### 2. Work Normally with Your AI Agent
 Ask Antigravity, Claude Code, or your preferred agent to work:
@@ -94,6 +99,16 @@ Instead of clicking Reject, **simply reply to the Telegram notification with tex
 > *"No, don't use express, use fastify instead"*
 
 Arthur captures your reply, cancels the command, and returns your exact feedback into the AI agent's prompt. The agent reads your reasoning and self-corrects without you ever touching your keyboard!
+
+---
+
+## 💻 CLI Commands
+
+| Command | Description |
+| :--- | :--- |
+| `npx arthur-agent-bot install-hooks` | Sets up `.agents/hooks.json` and resilient runner bridge in your project |
+| `npx arthur-agent-bot pair` | Generates a 1-click magic link to pair your Telegram phone immediately |
+| `npx arthur-agent-bot status` | Shows current pairing session, pairing code, and relay status |
 
 ---
 
