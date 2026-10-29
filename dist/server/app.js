@@ -96,24 +96,16 @@ export function createApp(requestManager = defaultRequestManager, telegramServic
             parsedInput.summary = policy.humanSummary;
             // Check if local Telegram or Official Relay is active
             const isLocalTelegramActive = telegramService?.isConfigured ? telegramService.isConfigured() : false;
-            // If neither is configured, check if we can get a pairing link to show the user
+            // If Telegram is not active, force terminal confirmation in Antigravity!
             if (!isLocalTelegramActive) {
                 const session = await defaultRelayClient.getOrCreatePairingSession();
-                if (session && !session.isPaired) {
-                    process.stderr.write(`\n------------------------------------------------------------\n`);
-                    process.stderr.write(`🛡️  [Arthur] Phone Not Paired Yet\n`);
-                    process.stderr.write(`📱  Click to pair your phone in 1-tap:\n`);
-                    process.stderr.write(`👉  ${session.pairingUrl}\n`);
-                    process.stderr.write(`------------------------------------------------------------\n\n`);
-                    // Allow the current command with notice so the user is never blocked on first run
-                    const unblockedResp = adapter.formatResponse({
-                        requestId: 'first-run-pairing',
-                        decision: 'approved',
-                        reason: `Action allowed. Pair your phone at ${session.pairingUrl} for future 1-tap gating.`,
-                    }, req.body);
-                    res.json(unblockedResp);
-                    return;
-                }
+                const pairingHint = session ? ` (Pair phone at ${session.pairingUrl} for mobile approval)` : '';
+                const terminalAskResp = {
+                    decision: 'force_ask',
+                    reason: `🛡️ Arthur: ${policy.humanSummary}${pairingHint}`,
+                };
+                res.json(terminalAskResp);
+                return;
             }
             // Await decision from local Telegram or Relay
             const timeoutSec = parseInt(req.query.timeout, 10) || 120;

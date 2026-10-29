@@ -58,10 +58,11 @@ export async function ensureDaemonRunning(serverUrl: string = 'http://127.0.0.1:
   // 3. Spawn detached background process
   try {
     process.stderr.write(`🛡️  [Arthur] Starting background approval daemon...\n`);
+    const projectRoot = path.resolve(path.dirname(serverScript), '../..');
     const child = spawn(process.execPath, [serverScript], {
       detached: true,
       stdio: 'ignore',
-      cwd: path.dirname(path.dirname(serverScript)),
+      cwd: projectRoot,
       env: { ...process.env },
     });
 

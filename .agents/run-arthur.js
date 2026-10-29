@@ -9,20 +9,23 @@ const candidates = [
   path.resolve(__dirname, '../dist/cli/hook-runner.js'),
   path.resolve(__dirname, 'dist/cli/hook-runner.js'),
   path.resolve(process.cwd(), 'dist/cli/hook-runner.js'),
-  path.resolve(process.cwd(), '../dist/cli/hook-runner.js'),
+  path.resolve(process.cwd(), 'node_modules/arthur-agent-bot/dist/cli/hook-runner.js'),
+  path.resolve(__dirname, '../node_modules/arthur-agent-bot/dist/cli/hook-runner.js'),
 ];
 
-const runnerPath = candidates.find((p) => fs.existsSync(p));
+let runnerPath = candidates.find((p) => fs.existsSync(p));
 
-if (!runnerPath) {
-  console.log(JSON.stringify({ decision: 'deny', reason: 'Arthur hook-runner.js not found. Please run npm run build first.' }));
-  process.exit(0);
+if (runnerPath) {
+  const child = spawn(process.execPath, [runnerPath, ...process.argv.slice(2)], {
+    stdio: 'inherit',
+  });
+  child.on('exit', (code) => process.exit(code ?? 0));
+} else {
+  // Fallback to npx runner if not installed locally
+  const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  const child = spawn(npxCmd, ['--yes', 'arthur-agent-bot', 'hook-runner', ...process.argv.slice(2)], {
+    stdio: 'inherit',
+    shell: true,
+  });
+  child.on('exit', (code) => process.exit(code ?? 0));
 }
-
-const child = spawn(process.execPath, [runnerPath, ...process.argv.slice(2)], {
-  stdio: 'inherit',
-});
-
-child.on('exit', (code) => {
-  process.exit(code ?? 0);
-});

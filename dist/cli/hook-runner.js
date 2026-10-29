@@ -1,11 +1,31 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { ensureDaemonRunning } from './daemon.js';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 function loadEnv() {
-    const envPath = path.resolve(process.cwd(), '.env');
-    if (fs.existsSync(envPath)) {
-        const content = fs.readFileSync(envPath, 'utf8');
+    const searchDirs = [process.cwd(), __dirname];
+    let foundEnvPath = null;
+    for (const start of searchDirs) {
+        let current = path.resolve(start);
+        while (true) {
+            const candidate = path.join(current, '.env');
+            if (fs.existsSync(candidate)) {
+                foundEnvPath = candidate;
+                break;
+            }
+            const parent = path.dirname(current);
+            if (parent === current)
+                break;
+            current = parent;
+        }
+        if (foundEnvPath)
+            break;
+    }
+    if (foundEnvPath) {
+        const content = fs.readFileSync(foundEnvPath, 'utf8');
         for (const line of content.split('\n')) {
             const trimmed = line.trim();
             if (!trimmed || trimmed.startsWith('#'))

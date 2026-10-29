@@ -1,14 +1,35 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { createApp } from './app.js';
 import { defaultRequestManager } from '../core/request-manager.js';
 import { TelegramService } from '../telegram/telegram-service.js';
 
-// Auto-load .env file if present
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Reliably find and load .env by walking up directories
 function loadEnv() {
-  const envPath = path.resolve(process.cwd(), '.env');
-  if (fs.existsSync(envPath)) {
-    const content = fs.readFileSync(envPath, 'utf8');
+  const searchDirs = [process.cwd(), __dirname];
+  let foundEnvPath: string | null = null;
+
+  for (const start of searchDirs) {
+    let current = path.resolve(start);
+    while (true) {
+      const candidate = path.join(current, '.env');
+      if (fs.existsSync(candidate)) {
+        foundEnvPath = candidate;
+        break;
+      }
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+    if (foundEnvPath) break;
+  }
+
+  if (foundEnvPath) {
+    const content = fs.readFileSync(foundEnvPath, 'utf8');
     for (const line of content.split('\n')) {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith('#')) continue;
@@ -37,7 +58,7 @@ const server = app.listen(PORT, HOST, () => {
     console.log(`📱 [Arthur Server] Telegram Mobile Bot: ACTIVE (Chat ID: ${telegramService.getChatId()})`);
     telegramService.startPolling();
   } else {
-    console.log(`⚠️  [Arthur Server] Telegram not configured yet. Run 'npx arthur init' to connect your bot.`);
+    console.log(`⚠️  [Arthur Server] Telegram not configured in .env. Running in terminal prompt mode.`);
   }
 });
 
