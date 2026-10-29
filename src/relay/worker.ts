@@ -37,7 +37,7 @@ export class ArthurRelayService {
   createSession(): { sessionId: string; pairingCode: string; pairingUrl: string; botUsername: string } {
     const sessionId = `sess_${Math.random().toString(36).substring(2, 12)}`;
     const pairingCode = `ART-${Math.floor(1000 + Math.random() * 9000)}`;
-    const botUser = process.env.ARTHUR_BOT_NAME || 'ArthurAgentBot';
+    const botUser = process.env.ARTHUR_BOT_NAME || 'OurArthurBot';
 
     const session: SessionData = {
       sessionId,
@@ -225,3 +225,4 @@ export class ArthurRelayService {
     });
   }
 }
+

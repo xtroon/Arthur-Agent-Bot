@@ -1,5 +1,5 @@
 {
-  "name": "arthur-agent",
+  "name": "arthur-agent-bot",
   "version": "0.2.0",
   "description": "Universal Human-in-the-Loop Approval Layer for AI Coding Agents via Telegram",
   "type": "module",
@@ -7,6 +7,10 @@
   "bin": {
     "arthur": "dist/cli/arthur-cli.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "start": "node dist/server/index.js",

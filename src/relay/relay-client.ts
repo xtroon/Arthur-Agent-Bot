@@ -24,7 +24,7 @@ export class RelayClient {
 
   async getOrCreatePairingSession(): Promise<PairingSession | null> {
     const config = loadArthurConfig();
-    const botUser = process.env.ARTHUR_BOT_NAME || 'ArthurAgentBot';
+    const botUser = process.env.ARTHUR_BOT_NAME || 'OurArthurBot';
 
     // If already paired with a session, check if it is active
     if (config.pairedSessionId) {
@@ -121,3 +121,4 @@ export class RelayClient {
 }
 
 export const defaultRelayClient = new RelayClient();
+

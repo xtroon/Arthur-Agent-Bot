@@ -1,9 +1,13 @@
 # Arthur 🛡️
 
+[![npm version](https://img.shields.io/npm/v/arthur-agent-bot.svg?style=flat-square&color=blue)](https://www.npmjs.com/package/arthur-agent-bot)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
+[![Telegram](https://img.shields.io/badge/Telegram-OurArthurBot-blue.svg?style=flat-square&logo=telegram)](https://t.me/OurArthurBot)
+
 > **Universal Human-in-the-Loop Approval Layer for AI Coding Agents**  
 > *Zero-effort mobile approvals via Telegram • Smart Policy Firewall • Auto-Daemon*
 
-Arthur is a lightweight, agent-agnostic gateway that gives you full oversight of your autonomous coding agents (Google Antigravity, Claude Code, Cursor, etc.) directly from your phone—with **zero friction, zero public URLs, and zero manual server management**.
+Arthur is an agent-agnostic gateway that gives you full oversight and control over your autonomous coding agents (Google Antigravity, Claude Code, Cursor, etc.) directly from your phone—with **zero bot setup, zero public URLs, and zero manual server management**.
 
 ---
 
@@ -12,37 +16,47 @@ Arthur is a lightweight, agent-agnostic gateway that gives you full oversight of
 | Feature | Official Tools (Claude / AGY Remotes) | Arthur |
 | :--- | :--- | :--- |
 | **Agent Support** | Vendor-locked to a single CLI | **Universal** (Antigravity, Claude Code, Cursor) |
-| **Approval Surface** | Terminal prompts or web dashboards | **100% Phone Push via Telegram** |
-| **Network Setup** | Requires tunnels, ports, or webhooks | **Zero Config** (Telegram Long Polling works on 4G/Wi-Fi) |
+| **Bot Setup** | Complicated developer portals | **1-Click Magic Link** via [@OurArthurBot](https://t.me/OurArthurBot) |
+| **Approval Surface** | Raw terminal prompts | **100% Phone Push Notifications** |
 | **Noise Fatigue** | Prompts for *everything* | **Smart Policy Engine** (Auto-allows safe read commands) |
 | **Agent Steering** | Binary Yes / No only | **Two-Way Steering** (Reply in Telegram to guide agent) |
+| **Network Setup** | Requires tunnels, ports, or webhooks | **Zero Config** (Telegram Long-Polling & Cloudflare Relay) |
 | **Server Running** | Must manually run `npm start` | **Auto-Daemon** (Silently spawns on demand) |
 
 ---
 
-## 🚀 60-Second Quick Start
+## 🚀 Quick Start (Under 30 Seconds)
 
-### 1. Create a Telegram Bot
-1. Open Telegram on your phone and search for **[@BotFather](https://t.me/BotFather)**.
-2. Send `/newbot`, choose a name and username.
-3. Copy the HTTP API token provided by BotFather.
-
-### 2. Run Arthur Setup
-From your project directory:
+### 1. Install Arthur into your project:
 ```bash
-npx arthur init
+npx arthur-agent-bot install-hooks
 ```
-1. Paste your bot token when prompted.
-2. Open your new bot in Telegram and tap **Start** (or send `/start`).
-3. Arthur will auto-detect your chat ID, save your `.env`, and install the workspace hooks automatically!
+*(This sets up `.agents/hooks.json` in your repository).*
+
+### 2. Work Normally with Your AI Agent
+Ask Antigravity, Claude Code, or your preferred agent to work:
+> *"Refactor the database models and install dependencies"*
+
+* **Harmless inspections** (`git status`, `ls`, `cat`, etc.) are **auto-approved in milliseconds** without buzzing your phone.
+* **On the first risky action** (file writes, package installs, git pushes), Arthur prints a 1-click magic link:
+  ```
+  ------------------------------------------------------------
+  🛡️  [Arthur] Phone Not Paired Yet
+  📱  Click to pair your phone in 1-tap:
+  👉  https://t.me/OurArthurBot?start=ART-9182
+  ------------------------------------------------------------
+  ```
+1. Tap the link on your phone.
+2. Tap **Start** in [@OurArthurBot](https://t.me/OurArthurBot).
+3. **Paired forever!** Stored globally in `~/.arthur/config.json` across all projects on your machine.
 
 ---
 
 ## ⚡ Smart Policy Firewall
 
-Arthur eliminates prompt fatigue by differentiating between harmless inspections and dangerous mutations:
+Arthur eliminates notification fatigue by differentiating between harmless inspections and dangerous mutations:
 
-### 🟢 Auto-Approved Instantly (No Phone Buzz)
+### 🟢 Auto-Approved Instantly (Zero Phone Buzz)
 * **Git Inspections**: `git status`, `git diff`, `git log`, `git branch`, `git remote -v`, `git show`
 * **Filesystem Reads**: `ls`, `dir`, `pwd`, `cd`, `cat`, `head`, `tail`, `grep`, `findstr`
 * **Environment Checks**: `node -v`, `npm --version`, `python --version`, `which`, `where`, `whoami`
@@ -56,9 +70,9 @@ Arthur eliminates prompt fatigue by differentiating between harmless inspections
 
 ---
 
-## 📱 Interactive Telegram Approval Flow
+## 📱 Mobile Approvals & Two-Way Steering
 
-When an agent plans an important action, Arthur sends an alert to your Telegram:
+When an agent plans an important action, your phone vibrates with an interactive card:
 
 ```
 🛡️ Arthur Agent Approval
@@ -72,14 +86,14 @@ When an agent plans an important action, Arthur sends an alert to your Telegram:
 ```
 
 ### 1. One-Tap Decision
-* Tap **Approve ✅**: The agent unblocks instantly on your computer. The message updates to `✅ APPROVED`.
+* Tap **Approve ✅**: The tool execution unblocks instantly on your computer.
 * Tap **Reject ❌**: The tool execution is cancelled with a policy rejection notice.
 
 ### 2. Two-Way Steering (Natural Language Guidance)
-Instead of clicking Reject, **simply reply to the Telegram message with text**:
+Instead of clicking Reject, **simply reply to the Telegram notification with text**:
 > *"No, don't use express, use fastify instead"*
 
-Arthur captures your reply, terminates the command, and returns your feedback directly into the AI agent's prompt. The agent reads your reasoning and self-corrects without you ever touching your keyboard!
+Arthur captures your reply, cancels the command, and returns your exact feedback into the AI agent's prompt. The agent reads your reasoning and self-corrects without you ever touching your keyboard!
 
 ---
 
@@ -112,12 +126,21 @@ Arthur captures your reply, terminates the command, and returns your feedback di
 │   ├── Policy Engine       (Risk evaluation & classification)│
 │   ├── Request Manager     (Promise holding & resolution)    │
 │   ├── Agent Adapters      (Antigravity, Claude Code, Cursor)│
-│   └── Telegram Service    (Native Long-Polling Bot API)     │
+│   └── Relay Client        (Connects to Official Relay)      │
 └────────────────────────────▲────────────────────────────────┘
-                             │ Outbound Long-Polling (No Tunnels)
+                             │ Outbound Connection
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Arthur Official Relay (Cloudflare)             │
+│         https://arthur-relay.arthur-relay.workers.dev       │
+│                                                             │
+│   • Manages session pairing PINs (ART-XXXX)                 │
+│   • Single central webhook for @OurArthurBot                │
+└────────────────────────────▲────────────────────────────────┘
+                             │ Telegram Webhook
                              ▼
                  ┌───────────────────────┐
-                 │    Telegram Cloud     │
+                 │    @OurArthurBot      │
                  └───────────▲───────────┘
                              │ Push Notification
                              ▼
@@ -140,12 +163,9 @@ npm test
 
 # Run end-to-end hook process tests
 npx tsx test/e2e-hook.test.ts
-
-# Send a test approval card to your Telegram app
-npx tsx src/cli/arthur-cli.ts test
 ```
 
 ---
 
 ## 📄 License
-MIT
+MIT © [xtroon](https://github.com/xtroon)

@@ -1,0 +1,6 @@
+name = "arthur-relay"
+main = "src/relay/worker.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+ARTHUR_BOT_NAME = "OurArthurBot" 

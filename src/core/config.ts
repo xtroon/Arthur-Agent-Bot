@@ -25,7 +25,7 @@ export function loadArthurConfig(): ArthurGlobalConfig {
   }
 
   return {
-    relayUrl: process.env.ARTHUR_RELAY_URL || 'https://relay.arthur-agent.dev',
+    relayUrl: 'https://arthur-relay.arthur-relay.workers.dev',
     autoApproveSafe: true,
   };
 }
@@ -50,3 +50,4 @@ export function isDevicePaired(): boolean {
   const config = loadArthurConfig();
   return Boolean(config.pairedSessionId || config.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN);
 }
+
