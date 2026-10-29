@@ -26,4 +26,3 @@ const child = spawn(process.execPath, [runnerPath, ...process.argv.slice(2)], {
 child.on('exit', (code) => {
   process.exit(code ?? 0);
 });
-

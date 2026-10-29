@@ -75,7 +75,11 @@ async function runE2ETests() {
 
   const requestManager = new RequestManager();
   const policyEngine = new PolicyEngine();
-  const app = createApp(requestManager, undefined as any, policyEngine);
+  const mockTelegramService: any = {
+    isConfigured: () => true,
+    notifyRequest: async () => {},
+  };
+  const app = createApp(requestManager, mockTelegramService, policyEngine);
 
   const server = app.listen(TEST_PORT, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
