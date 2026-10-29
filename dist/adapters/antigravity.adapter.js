@@ -11,7 +11,7 @@ export class AntigravityAdapter {
             case 'run_command': {
                 actionType = 'command';
                 const cmd = args.CommandLine || args.command || '(empty command)';
-                summary = `Execute shell command: ${cmd}`;
+                summary = `Command: ${cmd}`;
                 description = `Command: ${cmd}\nTool Summary: ${args.toolSummary || 'N/A'}`;
                 break;
             }
@@ -77,7 +77,7 @@ export class AntigravityAdapter {
         }
         return {
             decision: 'deny',
-            reason: decision.reason || 'Action rejected by human operator in Milo approval layer.',
+            reason: decision.reason || 'Action rejected by human operator in Arthur approval layer.',
         };
     }
 }

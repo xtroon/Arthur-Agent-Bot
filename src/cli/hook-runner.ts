@@ -1,4 +1,7 @@
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import { ensureDaemonRunning } from './daemon.js';
 
 interface HookRunnerOptions {
   serverUrl: string;
@@ -7,12 +10,32 @@ interface HookRunnerOptions {
   fallbackPolicy: 'deny' | 'allow';
 }
 
+function loadEnv() {
+  const envPath = path.resolve(process.cwd(), '.env');
+  if (fs.existsSync(envPath)) {
+    const content = fs.readFileSync(envPath, 'utf8');
+    for (const line of content.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx !== -1) {
+        const key = trimmed.slice(0, eqIdx).trim();
+        const val = trimmed.slice(eqIdx + 1).trim();
+        if (!process.env[key]) {
+          process.env[key] = val;
+        }
+      }
+    }
+  }
+}
+loadEnv();
+
 function parseArgs(): HookRunnerOptions {
   const args = process.argv.slice(2);
-  let serverUrl = process.env.MILO_SERVER_URL || 'http://127.0.0.1:4000';
+  let serverUrl = process.env.ARTHUR_SERVER_URL || process.env.MILO_SERVER_URL || 'http://127.0.0.1:4000';
   let agentName = 'antigravity';
-  let timeoutSeconds = parseInt(process.env.MILO_TIMEOUT_SEC || '180', 10);
-  let fallbackPolicy: 'deny' | 'allow' = (process.env.MILO_FALLBACK as any) === 'allow' ? 'allow' : 'deny';
+  let timeoutSeconds = parseInt(process.env.ARTHUR_TIMEOUT_SEC || '180', 10);
+  let fallbackPolicy: 'deny' | 'allow' = (process.env.ARTHUR_FALLBACK as any) === 'allow' ? 'allow' : 'deny';
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--server' && args[i + 1]) {
@@ -116,10 +139,7 @@ async function main() {
   try {
     rawInputStr = await readStdin();
   } catch (err: any) {
-    const fallbackResponse = options.fallbackPolicy === 'allow'
-      ? { decision: 'allow' }
-      : { decision: 'deny', reason: `Milo Hook error reading stdin: ${err.message}` };
-    console.log(JSON.stringify(fallbackResponse));
+    console.log(JSON.stringify({ decision: 'deny', reason: `Arthur error reading stdin: ${err.message}` }));
     process.exit(0);
   }
 
@@ -128,50 +148,53 @@ async function main() {
     try {
       inputPayload = JSON.parse(rawInputStr);
     } catch (err: any) {
-      const fallbackResponse = options.fallbackPolicy === 'allow'
-        ? { decision: 'allow' }
-        : { decision: 'deny', reason: `Milo Hook invalid JSON on stdin: ${err.message}` };
-      console.log(JSON.stringify(fallbackResponse));
+      console.log(JSON.stringify({ decision: 'deny', reason: `Arthur invalid JSON: ${err.message}` }));
       process.exit(0);
     }
   }
 
+  // 1. Ensure background daemon is running automatically!
+  const isRunning = await ensureDaemonRunning(options.serverUrl);
+  if (!isRunning) {
+    // If daemon couldn't be spawned, notify and deny safely
+    process.stderr.write(`⚠️  [Arthur] Could not reach or start background server.\n`);
+    console.log(
+      JSON.stringify({
+        decision: options.fallbackPolicy,
+        reason: 'Arthur background approval server is unavailable.',
+      })
+    );
+    process.exit(0);
+  }
+
   const toolSummary = formatToolSummary(inputPayload.toolCall);
 
-  // Notify immediately in the terminal / conversation stream
-  process.stderr.write(`\n------------------------------------------------------------\n`);
-  process.stderr.write(`🛡️  [Milo] Approval Required: ${toolSummary}\n`);
-  process.stderr.write(`👉 Pending on Dashboard: ${options.serverUrl}/\n`);
-  process.stderr.write(`⏳ Waiting for approval (or click Approve on dashboard)...\n`);
-  process.stderr.write(`------------------------------------------------------------\n\n`);
-
-  // Send to Milo approval server
+  // Send to Arthur approval server (which evaluates policy & sends Telegram alert if needed)
   const endpoint = `${options.serverUrl}/api/agent/${options.agentName}/pre-tool?timeout=${options.timeoutSeconds}`;
   const networkTimeoutMs = (options.timeoutSeconds + 5) * 1000;
 
   try {
     const agentDecision = await sendPostRequest(endpoint, inputPayload, networkTimeoutMs);
-    
+
     if (agentDecision.decision === 'allow') {
-      process.stderr.write(`✅ [Milo] Approved on dashboard! Auto-approving execution...\n\n`);
+      if (agentDecision.reason?.includes('Auto-approved')) {
+        process.stderr.write(`⚡ [Arthur] Auto-approved safe action: ${toolSummary}\n`);
+      } else {
+        process.stderr.write(`✅ [Arthur] Approved from Telegram! Continuing execution...\n`);
+      }
     } else {
-      process.stderr.write(`❌ [Milo] Rejected on dashboard: ${agentDecision.reason || 'No reason provided'}\n\n`);
+      process.stderr.write(`❌ [Arthur] Rejected: ${agentDecision.reason || 'Denied by operator'}\n`);
     }
 
-    // Print the supported decision format to stdout for the agent CLI
     console.log(JSON.stringify(agentDecision));
   } catch (err: any) {
-    process.stderr.write(`⚠️  [Milo] Error or timeout: ${err.message}\n\n`);
-    if (options.fallbackPolicy === 'allow') {
-      console.log(JSON.stringify({ decision: 'allow' }));
-    } else {
-      console.log(
-        JSON.stringify({
-          decision: 'deny',
-          reason: `Milo approval error: ${err.message || 'Server unavailable or approval timed out.'}`,
-        })
-      );
-    }
+    process.stderr.write(`⚠️  [Arthur] Timeout or error: ${err.message}\n`);
+    console.log(
+      JSON.stringify({
+        decision: options.fallbackPolicy,
+        reason: `Arthur error: ${err.message || 'Approval timed out'}`,
+      })
+    );
   }
 
   process.exit(0);

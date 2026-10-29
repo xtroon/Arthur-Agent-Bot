@@ -1,222 +1,151 @@
-# Milo: Human Approval Layer for AI Agents
+# Arthur 🛡️
 
-> **Minimal MVP** starting with Google Antigravity CLI (`agy`) + Slack Bot Integration.
+> **Universal Human-in-the-Loop Approval Layer for AI Coding Agents**  
+> *Zero-effort mobile approvals via Telegram • Smart Policy Firewall • Auto-Daemon*
 
-Milo is a lightweight, human-in-the-loop approval layer for AI coding agents. When an AI agent attempts to run sensitive actions (shell commands, file modifications, etc.), Milo intercepts the action before execution, holds the agent loop, presents the proposed operation on a **local web dashboard** and **Slack channel**, and lets a human operator **Approve** or **Reject** it in real time from either platform.
+Arthur is a lightweight, agent-agnostic gateway that gives you full oversight of your autonomous coding agents (Google Antigravity, Claude Code, Cursor, etc.) directly from your phone—with **zero friction, zero public URLs, and zero manual server management**.
 
 ---
 
-## 1. Antigravity CLI Hook Capabilities & Findings
+## 🌟 Why Arthur?
 
-Based on an inspection of the official Antigravity customization specification (`agy-customizations/docs/hooks.md`):
+| Feature | Official Tools (Claude / AGY Remotes) | Arthur |
+| :--- | :--- | :--- |
+| **Agent Support** | Vendor-locked to a single CLI | **Universal** (Antigravity, Claude Code, Cursor) |
+| **Approval Surface** | Terminal prompts or web dashboards | **100% Phone Push via Telegram** |
+| **Network Setup** | Requires tunnels, ports, or webhooks | **Zero Config** (Telegram Long Polling works on 4G/Wi-Fi) |
+| **Noise Fatigue** | Prompts for *everything* | **Smart Policy Engine** (Auto-allows safe read commands) |
+| **Agent Steering** | Binary Yes / No only | **Two-Way Steering** (Reply in Telegram to guide agent) |
+| **Server Running** | Must manually run `npm start` | **Auto-Daemon** (Silently spawns on demand) |
 
-### Supported Hook Events
-Antigravity supports 6 lifecycle events:
-1. **`PreToolUse`**: Fires immediately before a tool call executes. This is the **primary gating point** for approvals. Handlers receive the tool call and arguments via `stdin` and return an authorization decision (`allow`, `deny`, `ask`, `force_ask`) via `stdout`.
-2. **`PostToolUse`**: Fires after a tool completes; receives execution status and errors.
-3. **`SessionStart`**: Fires once when a new conversation session initializes.
-4. **`PreInvocation`**: Runs before the model is invoked; allows injecting transient system or ephemeral context.
-5. **`PostInvocation`**: Runs after model output; can trigger loop continuation or forced termination.
-6. **`Stop`**: Fires when execution terminates; can override termination.
+---
 
-### Configuration Format
-Hooks are declared in a `hooks.json` file inside a customization root directory (e.g., `.agents/hooks.json` in your workspace):
+## 🚀 60-Second Quick Start
 
-```json
-{
-  "milo-approver": {
-    "enabled": true,
-    "PreToolUse": [
-      {
-        "matcher": "run_command|write_file|edit_file",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node run-milo.js",
-            "timeout": 180
-          }
-        ]
-      }
-    ]
-  }
-}
+### 1. Create a Telegram Bot
+1. Open Telegram on your phone and search for **[@BotFather](https://t.me/BotFather)**.
+2. Send `/newbot`, choose a name and username.
+3. Copy the HTTP API token provided by BotFather.
+
+### 2. Run Arthur Setup
+From your project directory:
+```bash
+npx arthur init
+```
+1. Paste your bot token when prompted.
+2. Open your new bot in Telegram and tap **Start** (or send `/start`).
+3. Arthur will auto-detect your chat ID, save your `.env`, and install the workspace hooks automatically!
+
+---
+
+## ⚡ Smart Policy Firewall
+
+Arthur eliminates prompt fatigue by differentiating between harmless inspections and dangerous mutations:
+
+### 🟢 Auto-Approved Instantly (No Phone Buzz)
+* **Git Inspections**: `git status`, `git diff`, `git log`, `git branch`, `git remote -v`, `git show`
+* **Filesystem Reads**: `ls`, `dir`, `pwd`, `cd`, `cat`, `head`, `tail`, `grep`, `findstr`
+* **Environment Checks**: `node -v`, `npm --version`, `python --version`, `which`, `where`, `whoami`
+
+### 🔴 Escalated to Telegram for 1-Tap Approval
+* **File Modifications**: Any `edit_file` or `write_file` operation
+* **Destructive Deletions**: `rm`, `del`, `rmdir`, `rimraf`
+* **Remote Git Operations**: `git push`, `git reset --hard`, `git clean -f`
+* **Package Installs & Builds**: `npm install`, `yarn add`, `pip install`
+* **Secrets & Credentials**: Access or modification to `.env`, `.pem`, `id_rsa`, passwords
+
+---
+
+## 📱 Interactive Telegram Approval Flow
+
+When an agent plans an important action, Arthur sends an alert to your Telegram:
+
+```
+🛡️ Arthur Agent Approval
+
+🤖 Agent: Antigravity
+⚡ Tool: run_command
+📋 Action: 📦 Installing packages: npm install express
+⚠️ Risk: 🟡 MEDIUM RISK
+
+[ Approve ✅ ]    [ Reject ❌ ]
 ```
 
-### Can Hooks Block or Pause Execution?
-- **Synchronous Blocking is Fully Supported**: Antigravity hooks are executed as external shell commands (`type: "command"`). The CLI pipes JSON into the hook command's `stdin` and **synchronously waits** for the hook process to exit with its JSON verdict on `stdout`. This natural blocking mechanism allows Milo to pause the agent while awaiting human operator input.
-- **Limitation — No Native Asynchronous Webhook Pause/Resume**: Antigravity CLI currently does not support async background resumption (e.g. suspending a session to disk and resuming hours later via an external REST webhook).
-- **Milo's Safe Architecture**:
-  1. The hook script (`hook-runner.js`) acts as a synchronous bridge, keeping the process open and holding the agent loop while waiting for human decision on the local server or Slack.
-  2. Each hook has a configured `timeout` (e.g., 60–180 seconds).
-  3. If the operator does not decide within the window or if the Milo server is offline, the hook **fails safe** by returning `{ "decision": "deny", "reason": "..." }`, guaranteeing that unapproved actions never execute silently.
+### 1. One-Tap Decision
+* Tap **Approve ✅**: The agent unblocks instantly on your computer. The message updates to `✅ APPROVED`.
+* Tap **Reject ❌**: The tool execution is cancelled with a policy rejection notice.
+
+### 2. Two-Way Steering (Natural Language Guidance)
+Instead of clicking Reject, **simply reply to the Telegram message with text**:
+> *"No, don't use express, use fastify instead"*
+
+Arthur captures your reply, terminates the command, and returns your feedback directly into the AI agent's prompt. The agent reads your reasoning and self-corrects without you ever touching your keyboard!
 
 ---
 
-## 2. Architecture: Web + Slack Hybrid Approval
-
-Milo is built with strict isolation between the core approval domain, agent-specific adapters, and notification surfaces:
+## 🏗️ Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Antigravity CLI (agy)                    │
+│                 AI Agent (Antigravity / Claude)             │
 │                                                             │
 │   Agent plans tool call (e.g., run_command, edit_file)      │
 │                            │                                │
 │                            ▼                                │
-│              PreToolUse hook (.agents/hooks.json)           │
+│               PreToolUse Hook (.agents/hooks.json)          │
 └────────────────────────────┬────────────────────────────────┘
-                             │ (Pipes tool payload to stdin)
+                             │ (Pipes payload to stdin)
                              ▼
 ┌─────────────────────────────────────────────────────────────┐
-│             Milo Hook Bridge (run-milo.js / hook-runner.js) │
+│                 Arthur Hook Runner (run-arthur.js)          │
 │                                                             │
-│   1. Reads toolCall & context from stdin                    │
-│   2. POST /api/agent/antigravity/pre-tool                   │
-│   3. Synchronously waits for operator resolution            │
-│   4. Emits {"decision":"allow"} or {"decision":"deny"}      │
+│   1. Auto-spawns background daemon if not already running   │
+│   2. Evaluates Smart Policy Firewall                        │
+│      ├── Safe read command? ──► [Auto-Allow (0.1ms)]        │
+│      └── Risky action?      ──► Escalate to Arthur Engine   │
 └────────────────────────────┬────────────────────────────────┘
-                             │ HTTP (Port 4000)
+                             │ Local HTTP (Port 4000)
                              ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                 Milo Node.js + TypeScript Server            │
+│                     Arthur Core Engine                      │
 │                                                             │
-│   ├── src/core/           (Generic Request & Wait Engine)   │
-│   ├── src/adapters/       (AgentAdapter Interface)          │
-│   ├── src/slack/          (Slack Bot, Block Kit & Webhooks) │
-│   │   ├── types.ts                                          │
-│   │   ├── signature.ts    (HMAC SHA-256 Request Verifier)   │
-│   │   ├── block-builder.ts (Block Kit Message Generator)    │
-│   │   ├── slack-client.ts (Official Web API Client)         │
-│   │   └── slack-service.ts(Interactive Action Handler)      │
-│   ├── src/server/app.ts   (REST API + Web Dashboard + Slack)│
-│   └── src/web/public/     (Web UI: Real-Time SSE Dashboard) │
+│   ├── Policy Engine       (Risk evaluation & classification)│
+│   ├── Request Manager     (Promise holding & resolution)    │
+│   ├── Agent Adapters      (Antigravity, Claude Code, Cursor)│
+│   └── Telegram Service    (Native Long-Polling Bot API)     │
 └────────────────────────────▲────────────────────────────────┘
-                             │
-            ┌────────────────┴────────────────┐
-            │                                 │
-     Real-Time (SSE / Web UI)        Slack Web API & Webhook
-            ▼                                 ▼
-┌───────────────────────┐         ┌─────────────────────────┐
-│     Human Operator    │         │       Human Operator    │
-│ http://localhost:4000 │         │   Slack Channel/Mobile  │
-│ [Approve]   [Reject]  │         │  [Approve ✔️] [Reject ✖️]│
-└───────────────────────┘         └─────────────────────────┘
+                             │ Outbound Long-Polling (No Tunnels)
+                             ▼
+                 ┌───────────────────────┐
+                 │    Telegram Cloud     │
+                 └───────────▲───────────┘
+                             │ Push Notification
+                             ▼
+                 ┌───────────────────────┐
+                 │   Your Phone / Watch  │
+                 │ [Approve ✅] [Reject ❌]│
+                 │   (Or Reply to Guide) │
+                 └───────────────────────┘
 ```
 
-### Bi-Directional Synchronization
-- When a request is triggered, it appears **simultaneously** on the Web Dashboard and in your Slack channel.
-- If you click **Approve** on Slack:
-  - The agent loop unblocks immediately and executes the tool.
-  - The Slack message updates to: `✅ APPROVED by @username`.
-  - The Web Dashboard updates to `APPROVED` via real-time SSE.
-- If you click **Approve** on the Web Dashboard:
-  - The agent loop unblocks immediately.
-  - The Slack message updates to: `✅ APPROVED by operator`.
-  - The Web Dashboard updates to `APPROVED`.
-- Duplicate clicks and expired requests are safely rejected.
-
 ---
 
-## 3. Slack Integration Setup
+## 🧪 Testing
 
-The Slack integration supports both **Socket Mode** (recommended: zero tunnels or public URLs needed) and traditional HTTP webhooks. If Slack is not configured, the web approval dashboard continues working normally.
+Arthur comes with an automated test suite:
 
-### Option A: Socket Mode (Recommended — No ngrok or public URLs!)
-1. Go to your app in [https://api.slack.com/apps](https://api.slack.com/apps).
-2. Under **Socket Mode** (left sidebar):
-   - Toggle **Enable Socket Mode** to `ON`.
-3. Under **Basic Information**:
-   - Scroll to **App-Level Tokens** and click **Generate Token and Scopes**.
-   - Add scope: `connections:write` and copy the token (`xapp-...`).
-4. Under **OAuth & Permissions**:
-   - Add Bot Token Scope: `chat:write`.
-   - Click **Install to Workspace** and copy the **Bot User OAuth Token** (`xoxb-...`).
-5. Invite your bot to your Slack channel:
-   `/invite @YourBotName` and copy the Channel ID.
-6. Configure `.env`:
-   ```env
-   PORT=4000
-   SLACK_ENABLED=true
-   SLACK_BOT_TOKEN=xoxb-your-bot-token
-   SLACK_APP_TOKEN=xapp-your-app-level-token
-   SLACK_CHANNEL_ID=C0123456789
-   ```
-   *Notice: In Socket Mode, you do not need to configure any Request URL in Slack. All interactions are delivered over an outbound WebSocket (`wss://wss-primary.slack.com`).*
-
----
-
-### Option B: HTTP Webhooks (Using ngrok or public domain)
-1. Under **Interactivity & Shortcuts**:
-   - Toggle **Interactivity** to `ON`.
-   - Set **Request URL** to `https://<your-public-url>/api/slack/interactions`.
-2. Configure `.env`:
-   ```env
-   PORT=4000
-   SLACK_ENABLED=true
-   SLACK_BOT_TOKEN=xoxb-your-bot-token
-   SLACK_SIGNING_SECRET=your-signing-secret
-   SLACK_CHANNEL_ID=C0123456789
-   ```
-
----
-
-## 4. Setup & Quick Start
-
-### Prerequisites
-- Node.js (v18+; tested on Node.js v26)
-- Google Antigravity CLI (`agy`) installed and available on PATH
-
-### 1. Install & Build
 ```bash
-# Clone / navigate to project directory
-cd "agent talk"
+# Run unit & policy tests
+npm test
 
-# Install dependencies
-npm install
+# Run end-to-end hook process tests
+npx tsx test/e2e-hook.test.ts
 
-# Compile TypeScript
-npm run build
+# Send a test approval card to your Telegram app
+npx tsx src/cli/arthur-cli.ts test
 ```
-
-### 2. Start the Milo Approval Server
-```bash
-# Production start (compiled)
-npm start
-
-# Or development mode with hot reload
-npm run dev
-```
-The server will start listening at:
-- **Web Dashboard**: `http://localhost:4000/`
-- **Slack Interactions Endpoint**: `POST http://localhost:4000/api/slack/interactions`
-- **Health Check**: `http://localhost:4000/health`
-- **API**: `http://localhost:4000/api/requests`
 
 ---
 
-## 5. Verification & Testing
-
-Milo includes a comprehensive automated test suite covering unit tests, mocked child process flows, Slack integration, and real integration against the live `agy.exe` binary.
-
-### Run All Tests
-```bash
-npm run test:all
-```
-
-### Individual Test Suites
-- **Unit Tests** (Adapters & Request Manager):
-  ```bash
-  npx tsx test/unit.test.ts
-  ```
-- **End-to-End Hook Flow Tests** (Child process stdin/stdout, approval, rejection, offline fail-safe):
-  ```bash
-  npx tsx test/e2e-hook.test.ts
-  ```
-- **Slack Integration Tests** (HMAC SHA-256 signature verification, Block Kit builder, live button click execution, duplicate prevention, and web synchronization):
-  ```bash
-  npx tsx test/slack.test.ts
-  ```
-- **Real `agy.exe` Live Integration Test** (Live CLI binary intercepted by Milo):
-  ```bash
-  npx tsx test/live-agy-integration.test.ts
-  ```
+## 📄 License
+MIT

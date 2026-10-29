@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { AntigravityAdapter } from '../src/adapters/antigravity.adapter.js';
+import { ClaudeCodeAdapter } from '../src/adapters/claude-code.adapter.js';
 import { RequestManager } from '../src/core/request-manager.js';
 
 async function testAntigravityAdapter() {
@@ -49,7 +50,31 @@ async function testAntigravityAdapter() {
     reason: 'Risk of data loss',
   });
 
-  console.log('  \u2714 AntigravityAdapter tests passed!');
+  console.log('  ✔ AntigravityAdapter tests passed!');
+}
+
+async function testClaudeCodeAdapter() {
+  console.log('Testing ClaudeCodeAdapter...');
+  const adapter = new ClaudeCodeAdapter();
+
+  const parsed = adapter.parseInput({
+    tool: 'Bash',
+    input: { command: 'git push origin main' },
+    session_id: 'claude-session-1',
+  });
+
+  assert.equal(parsed.agent, 'claude-code');
+  assert.equal(parsed.actionType, 'command');
+  assert.equal(parsed.summary, 'Command: git push origin main');
+
+  const approved = adapter.formatResponse({ requestId: 'r1', decision: 'approved' });
+  assert.equal(approved.decision, 'allow');
+
+  const rejected = adapter.formatResponse({ requestId: 'r2', decision: 'rejected', reason: 'Blocked' });
+  assert.equal(rejected.decision, 'deny');
+  assert.equal(rejected.reason, 'Blocked');
+
+  console.log('  ✔ ClaudeCodeAdapter tests passed!');
 }
 
 async function testRequestManager() {
@@ -62,6 +87,7 @@ async function testRequestManager() {
     toolName: 'run_command',
     summary: 'Execute: git status',
     description: 'Check git status',
+    riskLevel: 'low',
     payload: { CommandLine: 'git status' },
     context: { conversationId: 'conv-test' },
   });
@@ -85,6 +111,7 @@ async function testRequestManager() {
     toolName: 'run_command',
     summary: 'Execute: sleep 10',
     description: 'Sleep test',
+    riskLevel: 'low',
     payload: { CommandLine: 'sleep 10' },
     context: {},
   });
@@ -94,16 +121,17 @@ async function testRequestManager() {
   assert.match(timeoutDecision.reason || '', /timed out/i);
   assert.equal(req2.status, 'timed_out');
 
-  console.log('  \u2714 RequestManager tests passed!');
+  console.log('  ✔ RequestManager tests passed!');
 }
 
 async function runAll() {
   try {
     await testAntigravityAdapter();
+    await testClaudeCodeAdapter();
     await testRequestManager();
-    console.log('\n\u2705 ALL UNIT TESTS PASSED!');
+    console.log('\n✅ ALL UNIT TESTS PASSED!');
   } catch (err) {
-    console.error('\n\u274c TEST FAILED:', err);
+    console.error('\n❌ TEST FAILED:', err);
     process.exit(1);
   }
 }

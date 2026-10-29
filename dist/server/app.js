@@ -3,8 +3,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { defaultRequestManager } from '../core/request-manager.js';
 import { adapterRegistry } from '../adapters/index.js';
-import { SlackService } from '../slack/slack-service.js';
-import { verifySlackSignature } from '../slack/signature.js';
+import { TelegramService } from '../telegram/telegram-service.js';
+import { defaultPolicyEngine } from '../policy/policy-engine.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 function getParam(param) {
@@ -12,31 +12,19 @@ function getParam(param) {
         return param[0];
     return param || '';
 }
-export function createApp(requestManager = defaultRequestManager, slackService = new SlackService(requestManager)) {
+export function createApp(requestManager = defaultRequestManager, telegramService = new TelegramService(requestManager), policyEngine = defaultPolicyEngine) {
     const app = express();
-    // Support urlencoded (Slack interactions) and JSON, capturing rawBody for signature verification
-    app.use(express.urlencoded({
-        extended: true,
-        limit: '10mb',
-        verify: (req, _res, buf) => {
-            req.rawBody = buf.toString('utf8');
-        },
-    }));
-    app.use(express.json({
-        limit: '10mb',
-        verify: (req, _res, buf) => {
-            req.rawBody = buf.toString('utf8');
-        },
-    }));
-    // Serve static UI files from web/public
+    app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+    app.use(express.json({ limit: '10mb' }));
+    // Optional static UI files
     const publicDir = path.resolve(__dirname, '../../src/web/public');
     app.use(express.static(publicDir));
     // Health check
     app.get('/health', (_req, res) => {
         res.json({
             status: 'ok',
-            service: 'milo-approval-server',
-            slackEnabled: slackService.isConfigured(),
+            service: 'arthur-approval-layer',
+            telegramConnected: telegramService?.isConfigured ? telegramService.isConfigured() : false,
         });
     });
     // GET /api/requests - list requests
@@ -57,17 +45,7 @@ export function createApp(requestManager = defaultRequestManager, slackService =
         }
         res.json({ success: true, request });
     });
-    // POST /api/requests - create a new approval request
-    app.post('/api/requests', (req, res) => {
-        const input = req.body;
-        if (!input || !input.toolName) {
-            res.status(400).json({ success: false, error: 'Invalid request input' });
-            return;
-        }
-        const request = requestManager.createRequest(input);
-        res.status(201).json({ success: true, request });
-    });
-    // POST /api/requests/:id/decision - approve or reject from Web UI or API
+    // POST /api/requests/:id/decision - manual approve or reject
     app.post('/api/requests/:id/decision', (req, res) => {
         const id = getParam(req.params.id);
         const { decision, reason } = req.body;
@@ -83,19 +61,16 @@ export function createApp(requestManager = defaultRequestManager, slackService =
         const request = requestManager.getRequest(id);
         res.json({ success: true, request });
     });
-    // GET /api/requests/:id/wait - wait for approval decision
-    app.get('/api/requests/:id/wait', async (req, res) => {
-        const id = getParam(req.params.id);
-        const timeoutMs = parseInt(req.query.timeout, 10) || 60000;
-        try {
-            const decision = await requestManager.waitForDecision(id, timeoutMs);
-            res.json({ success: true, decision });
+    // POST /api/telegram/test - send test message to Telegram
+    app.post('/api/telegram/test', async (_req, res) => {
+        if (!telegramService.isConfigured()) {
+            res.status(400).json({ success: false, error: 'Telegram is not configured in .env' });
+            return;
         }
-        catch (err) {
-            res.status(404).json({ success: false, error: err.message });
-        }
+        const sent = await telegramService.sendTestMessage();
+        res.json({ success: sent });
     });
-    // POST /api/agent/:agentName/pre-tool - Agent direct pre-tool endpoint
+    // POST /api/agent/:agentName/pre-tool - Agent direct pre-tool hook endpoint
     app.post('/api/agent/:agentName/pre-tool', async (req, res) => {
         const agentName = getParam(req.params.agentName) || 'antigravity';
         const adapter = adapterRegistry.get(agentName);
@@ -104,8 +79,33 @@ export function createApp(requestManager = defaultRequestManager, slackService =
             return;
         }
         try {
-            const timeoutSec = parseInt(req.query.timeout, 10) || 60;
             const parsedInput = adapter.parseInput(req.body);
+            // Evaluate Smart Policy before bothering the human operator
+            const policy = policyEngine.evaluate(parsedInput.toolName, parsedInput.actionType, parsedInput.payload);
+            // If policy says AUTO-ALLOW -> return immediately without bothering user!
+            if (policy.action === 'auto_allow') {
+                const autoAllowedResponse = adapter.formatResponse({
+                    requestId: 'auto-policy',
+                    decision: 'approved',
+                    reason: policy.reason,
+                }, req.body);
+                res.json(autoAllowedResponse);
+                return;
+            }
+            // Risky or important action -> Escalate to human operator on Telegram
+            parsedInput.riskLevel = policy.riskLevel;
+            parsedInput.summary = policy.humanSummary;
+            if (!telegramService.isConfigured()) {
+                console.warn(`[Arthur] ⚠️ Telegram is not configured yet. Run 'npx arthur init' to connect your phone.`);
+                const unconfiguredResponse = adapter.formatResponse({
+                    requestId: 'unconfigured-policy',
+                    decision: 'approved',
+                    reason: 'Telegram unconfigured: auto-allowed temporarily.',
+                }, req.body);
+                res.json(unconfiguredResponse);
+                return;
+            }
+            const timeoutSec = parseInt(req.query.timeout, 10) || 120;
             const request = requestManager.createRequest(parsedInput);
             const decision = await requestManager.waitForDecision(request.id, timeoutSec * 1000);
             const responsePayload = adapter.formatResponse(decision, req.body);
@@ -114,79 +114,6 @@ export function createApp(requestManager = defaultRequestManager, slackService =
         catch (err) {
             res.status(500).json({ error: err.message });
         }
-    });
-    // POST /api/slack/interactions - Slack Interactive Webhook (Buttons)
-    app.post('/api/slack/interactions', async (req, res) => {
-        const signingSecret = slackService.getSigningSecret();
-        const rawBody = req.rawBody || '';
-        const signature = req.headers['x-slack-signature'] || '';
-        const timestamp = req.headers['x-slack-request-timestamp'] || '';
-        // Verify signature if signing secret is configured or if signature headers are provided
-        if (signingSecret || signature) {
-            const verification = verifySlackSignature({
-                signingSecret: signingSecret || '',
-                requestSignature: signature,
-                timestamp,
-                rawBody,
-            });
-            if (!verification.valid) {
-                console.warn(`[Milo Slack] Unauthorized interaction attempt: ${verification.error}`);
-                res.status(401).send(`Unauthorized: ${verification.error}`);
-                return;
-            }
-        }
-        try {
-            let payload;
-            if (typeof req.body.payload === 'string') {
-                payload = JSON.parse(req.body.payload);
-            }
-            else if (req.body.payload && typeof req.body.payload === 'object') {
-                payload = req.body.payload;
-            }
-            else {
-                payload = req.body;
-            }
-            const result = await slackService.handleInteraction(payload);
-            // Return updated blocks to Slack so the message reflects the final status
-            if (result.updatedBlocks) {
-                res.status(200).json({
-                    replace_original: true,
-                    blocks: result.updatedBlocks,
-                    text: result.message,
-                });
-            }
-            else {
-                res.status(200).send(result.message);
-            }
-        }
-        catch (err) {
-            console.error(`[Milo Slack] Interaction error: ${err.message}`);
-            res.status(500).send(`Internal error processing Slack interaction: ${err.message}`);
-        }
-    });
-    // GET /api/events - Server-Sent Events stream for real-time dashboard updates
-    app.get('/api/events', (req, res) => {
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache');
-        res.setHeader('Connection', 'keep-alive');
-        res.flushHeaders();
-        const onRequestCreated = (request) => {
-            res.write(`event: request_created\ndata: ${JSON.stringify(request)}\n\n`);
-        };
-        const onRequestResolved = (data) => {
-            res.write(`event: request_resolved\ndata: ${JSON.stringify(data)}\n\n`);
-        };
-        requestManager.on('request_created', onRequestCreated);
-        requestManager.on('request_resolved', onRequestResolved);
-        // Keepalive heartbeat
-        const heartbeat = setInterval(() => {
-            res.write(': keepalive\n\n');
-        }, 15000);
-        req.on('close', () => {
-            clearInterval(heartbeat);
-            requestManager.off('request_created', onRequestCreated);
-            requestManager.off('request_resolved', onRequestResolved);
-        });
     });
     return app;
 }

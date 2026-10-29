@@ -1,27 +1,28 @@
 import { EventEmitter } from 'events';
 import { randomUUID } from 'crypto';
-import { MiloDecision, MiloRequest, MiloRequestInput } from './types.js';
+import { ArthurDecision, ArthurRequest, ArthurRequestInput } from './types.js';
 
 interface PendingWait {
-  resolve: (decision: MiloDecision) => void;
+  resolve: (decision: ArthurDecision) => void;
   timer: NodeJS.Timeout;
 }
 
 export class RequestManager extends EventEmitter {
-  private requests = new Map<string, MiloRequest>();
+  private requests = new Map<string, ArthurRequest>();
   private pendingWaits = new Map<string, PendingWait>();
 
-  createRequest(input: MiloRequestInput): MiloRequest {
+  createRequest(input: ArthurRequestInput): ArthurRequest {
     const id = randomUUID();
     const now = new Date().toISOString();
 
-    const request: MiloRequest = {
+    const request: ArthurRequest = {
       id,
       agent: input.agent,
       actionType: input.actionType,
       toolName: input.toolName,
       summary: input.summary,
       description: input.description,
+      riskLevel: input.riskLevel || 'medium',
       payload: input.payload,
       context: input.context,
       status: 'pending',
@@ -33,15 +34,15 @@ export class RequestManager extends EventEmitter {
     return request;
   }
 
-  getRequest(id: string): MiloRequest | undefined {
+  getRequest(id: string): ArthurRequest | undefined {
     return this.requests.get(id);
   }
 
-  getPendingRequests(): MiloRequest[] {
+  getPendingRequests(): ArthurRequest[] {
     return Array.from(this.requests.values()).filter((r) => r.status === 'pending');
   }
 
-  getAllRequests(): MiloRequest[] {
+  getAllRequests(): ArthurRequest[] {
     return Array.from(this.requests.values()).sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
@@ -57,7 +58,7 @@ export class RequestManager extends EventEmitter {
     request.decisionReason = reason;
     request.resolvedAt = new Date().toISOString();
 
-    const miloDecision: MiloDecision = {
+    const arthurDecision: ArthurDecision = {
       requestId: id,
       decision,
       reason,
@@ -67,14 +68,14 @@ export class RequestManager extends EventEmitter {
     if (pending) {
       clearTimeout(pending.timer);
       this.pendingWaits.delete(id);
-      pending.resolve(miloDecision);
+      pending.resolve(arthurDecision);
     }
 
-    this.emit('request_resolved', { request, decision: miloDecision });
+    this.emit('request_resolved', { request, decision: arthurDecision });
     return true;
   }
 
-  waitForDecision(requestId: string, timeoutMs: number = 60000): Promise<MiloDecision> {
+  waitForDecision(requestId: string, timeoutMs: number = 60000): Promise<ArthurDecision> {
     const request = this.requests.get(requestId);
     if (!request) {
       return Promise.reject(new Error(`Request ${requestId} not found`));
@@ -88,7 +89,7 @@ export class RequestManager extends EventEmitter {
       });
     }
 
-    return new Promise<MiloDecision>((resolve) => {
+    return new Promise<ArthurDecision>((resolve) => {
       const timer = setTimeout(() => {
         this.pendingWaits.delete(requestId);
         if (request.status === 'pending') {

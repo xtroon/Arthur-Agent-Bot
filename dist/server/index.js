@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { createApp } from './app.js';
 import { defaultRequestManager } from '../core/request-manager.js';
+import { TelegramService } from '../telegram/telegram-service.js';
 // Auto-load .env file if present
 function loadEnv() {
     const envPath = path.resolve(process.cwd(), '.env');
@@ -25,20 +26,25 @@ function loadEnv() {
 loadEnv();
 const PORT = parseInt(process.env.PORT || '4000', 10);
 const HOST = process.env.HOST || '127.0.0.1';
-const app = createApp(defaultRequestManager);
+const telegramService = new TelegramService(defaultRequestManager);
+const app = createApp(defaultRequestManager, telegramService);
 const server = app.listen(PORT, HOST, () => {
-    console.log(`[Milo Server] Running on http://${HOST}:${PORT}`);
-    console.log(`[Milo Server] Dashboard: http://${HOST}:${PORT}/`);
-    console.log(`[Milo Server] API: http://${HOST}:${PORT}/api/requests`);
+    console.log(`🛡️  [Arthur Server] Running on http://${HOST}:${PORT}`);
+    if (telegramService.isConfigured()) {
+        console.log(`📱 [Arthur Server] Telegram Mobile Bot: ACTIVE (Chat ID: ${telegramService.getChatId()})`);
+        telegramService.startPolling();
+    }
+    else {
+        console.log(`⚠️  [Arthur Server] Telegram not configured yet. Run 'npx arthur init' to connect your bot.`);
+    }
 });
-process.on('SIGINT', () => {
-    console.log('\n[Milo Server] Shutting down gracefully...');
+function shutdown() {
+    console.log('\n🛡️  [Arthur Server] Shutting down gracefully...');
+    telegramService.stopPolling();
+    defaultRequestManager.clear();
     server.close(() => {
         process.exit(0);
     });
-});
-process.on('SIGTERM', () => {
-    server.close(() => {
-        process.exit(0);
-    });
-});
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

@@ -15,8 +15,7 @@ const candidates = [
 const runnerPath = candidates.find((p) => fs.existsSync(p));
 
 if (!runnerPath) {
-  console.error('[Milo Hook Bridge] Could not find dist/cli/hook-runner.js in candidates:', candidates);
-  console.log(JSON.stringify({ decision: 'deny', reason: 'Milo hook-runner.js not found. Please run npm run build first.' }));
+  console.log(JSON.stringify({ decision: 'deny', reason: 'Arthur hook-runner.js not found. Please run npm run build first.' }));
   process.exit(0);
 }
 
@@ -27,3 +26,4 @@ const child = spawn(process.execPath, [runnerPath, ...process.argv.slice(2)], {
 child.on('exit', (code) => {
   process.exit(code ?? 0);
 });
+

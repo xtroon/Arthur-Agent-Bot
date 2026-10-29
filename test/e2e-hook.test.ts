@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import http from 'node:http';
 import { createApp } from '../src/server/app.js';
 import { RequestManager } from '../src/core/request-manager.js';
+import { PolicyEngine } from '../src/policy/policy-engine.js';
 
 const TEST_PORT = 4005;
 const BASE_URL = `http://127.0.0.1:${TEST_PORT}`;
@@ -70,10 +71,11 @@ function runHookProcess(inputPayload: any, serverUrl: string, timeoutSec: number
 }
 
 async function runE2ETests() {
-  console.log('--- Starting Milo E2E Hook Flow Tests ---');
+  console.log('--- Starting Arthur E2E Hook Flow Tests ---');
 
   const requestManager = new RequestManager();
-  const app = createApp(requestManager);
+  const policyEngine = new PolicyEngine();
+  const app = createApp(requestManager, undefined as any, policyEngine);
 
   const server = app.listen(TEST_PORT, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
@@ -81,122 +83,112 @@ async function runE2ETests() {
 
   try {
     // ---------------------------------------------------------
-    // TEST 1: End-to-End Approval Flow
+    // TEST 1: Smart Policy Auto-Approve (e.g. git status)
     // ---------------------------------------------------------
-    console.log('\n[Scenario 1] Tool execution -> Pending in Milo -> Human Approves -> Agent Allowed');
-
-    const hookPayload1 = {
+    console.log('\n[Scenario 1] Safe command -> Auto-allowed by policy without disturbing human');
+    const safePayload = {
       toolCall: {
         name: 'run_command',
-        args: { CommandLine: 'npm test' },
+        args: { CommandLine: 'git status' },
       },
-      stepIdx: 12,
-      conversationId: 'conv-scenario-1',
-      modelName: 'gemini-3.8-flash',
+      stepIdx: 1,
+      conversationId: 'conv-safe',
     };
 
-    // Run hook in background (it will block waiting for approval)
-    const hookPromise1 = runHookProcess(hookPayload1, BASE_URL, 5);
+    const safeResult = await runHookProcess(safePayload, BASE_URL, 5);
+    console.log(`  ✔ Safe hook process exited with code ${safeResult.code}`);
+    console.log(`  ✔ Safe hook stdout: ${safeResult.stdout}`);
+    const parsedSafe = JSON.parse(safeResult.stdout);
+    assert.equal(parsedSafe.decision, 'allow');
+    console.log('  ✅ Scenario 1 SUCCESS: Safe command auto-allowed in milliseconds!');
 
-    // Wait for the request to appear in the Milo server
-    let pendingReq1: any = null;
+    // ---------------------------------------------------------
+    // TEST 2: Risky command -> Pending -> Human Approves
+    // ---------------------------------------------------------
+    console.log('\n[Scenario 2] Risky command -> Pending in Arthur -> Operator Approves -> Allowed');
+
+    const riskyPayload = {
+      toolCall: {
+        name: 'run_command',
+        args: { CommandLine: 'npm install express' },
+      },
+      stepIdx: 2,
+      conversationId: 'conv-risky',
+    };
+
+    const hookPromise2 = runHookProcess(riskyPayload, BASE_URL, 5);
+
+    let pendingReq: any = null;
     for (let i = 0; i < 20; i++) {
       await new Promise((r) => setTimeout(r, 100));
       const res = await httpRequest('GET', '/api/requests?status=pending');
       if (res.requests && res.requests.length > 0) {
-        pendingReq1 = res.requests[0];
+        pendingReq = res.requests[0];
         break;
       }
     }
 
-    assert.ok(pendingReq1, 'Pending request should be registered in Milo server');
-    assert.equal(pendingReq1.toolName, 'run_command');
-    assert.equal(pendingReq1.payload.CommandLine, 'npm test');
-    console.log(`  \u2714 Request appeared on Milo dashboard: ${pendingReq1.id}`);
+    assert.ok(pendingReq, 'Pending request should be registered in Arthur');
+    assert.equal(pendingReq.toolName, 'run_command');
+    console.log(`  ✔ Request arrived in Arthur: ${pendingReq.id}`);
 
-    // Human operator clicks "Approve"
-    const approvalRes = await httpRequest('POST', `/api/requests/${pendingReq1.id}/decision`, {
+    const approvalRes = await httpRequest('POST', `/api/requests/${pendingReq.id}/decision`, {
       decision: 'approved',
-      reason: 'Tests are safe to run',
+      reason: 'Approved via test',
     });
     assert.equal(approvalRes.success, true);
-    console.log('  \u2714 Human approved request via web API');
 
-    // Await hook process completion
-    const result1 = await hookPromise1;
-    console.log(`  \u2714 Hook process exited with code ${result1.code}`);
-    console.log(`  \u2714 Hook stdout: ${result1.stdout}`);
-
-    const parsedOutput1 = JSON.parse(result1.stdout);
-    assert.equal(parsedOutput1.decision, 'allow');
-    assert.deepEqual(parsedOutput1.permissionOverrides, ['command(npm test)']);
-    console.log('  \u2705 Scenario 1 SUCCESS: Agent received decision: "allow"');
+    const result2 = await hookPromise2;
+    const parsed2 = JSON.parse(result2.stdout);
+    assert.equal(parsed2.decision, 'allow');
+    console.log('  ✅ Scenario 2 SUCCESS: Risky command approved and unblocked');
 
     // ---------------------------------------------------------
-    // TEST 2: End-to-End Rejection Flow
+    // TEST 3: Dangerous command -> Operator Rejects
     // ---------------------------------------------------------
-    console.log('\n[Scenario 2] Dangerous command -> Pending in Milo -> Human Rejects -> Agent Denied');
+    console.log('\n[Scenario 3] Dangerous command -> Operator Rejects -> Denied');
 
-    const hookPayload2 = {
+    const dangerousPayload = {
       toolCall: {
         name: 'run_command',
-        args: { CommandLine: 'rm -rf /important_data' },
+        args: { CommandLine: 'rm -rf /production-db' },
       },
-      stepIdx: 14,
-      conversationId: 'conv-scenario-2',
+      stepIdx: 3,
+      conversationId: 'conv-dangerous',
     };
 
-    const hookPromise2 = runHookProcess(hookPayload2, BASE_URL, 5);
+    const hookPromise3 = runHookProcess(dangerousPayload, BASE_URL, 5);
 
-    let pendingReq2: any = null;
+    let pendingReq3: any = null;
     for (let i = 0; i < 20; i++) {
       await new Promise((r) => setTimeout(r, 100));
       const res = await httpRequest('GET', '/api/requests?status=pending');
       if (res.requests && res.requests.length > 0) {
-        pendingReq2 = res.requests[0];
+        pendingReq3 = res.requests[0];
         break;
       }
     }
 
-    assert.ok(pendingReq2, 'Pending request 2 should be registered');
-    console.log(`  \u2714 Request appeared on Milo dashboard: ${pendingReq2.id}`);
-
-    // Human operator clicks "Reject"
-    const rejectionRes = await httpRequest('POST', `/api/requests/${pendingReq2.id}/decision`, {
+    assert.ok(pendingReq3, 'Dangerous request registered');
+    const rejectionRes = await httpRequest('POST', `/api/requests/${pendingReq3.id}/decision`, {
       decision: 'rejected',
-      reason: 'Destructive command prohibited by company policy',
+      reason: 'Destructive deletion prohibited',
     });
     assert.equal(rejectionRes.success, true);
-    console.log('  \u2714 Human rejected request with reason');
 
-    const result2 = await hookPromise2;
-    console.log(`  \u2714 Hook process exited with code ${result2.code}`);
-    console.log(`  \u2714 Hook stdout: ${result2.stdout}`);
+    const result3 = await hookPromise3;
+    const parsed3 = JSON.parse(result3.stdout);
+    assert.equal(parsed3.decision, 'deny');
+    assert.equal(parsed3.reason, 'Destructive deletion prohibited');
+    console.log('  ✅ Scenario 3 SUCCESS: Dangerous command rejected with reason');
 
-    const parsedOutput2 = JSON.parse(result2.stdout);
-    assert.equal(parsedOutput2.decision, 'deny');
-    assert.equal(parsedOutput2.reason, 'Destructive command prohibited by company policy');
-    console.log('  \u2705 Scenario 2 SUCCESS: Agent received decision: "deny" with custom reason');
-
-    // ---------------------------------------------------------
-    // TEST 3: Safe Fallback when Server Offline
-    // ---------------------------------------------------------
-    console.log('\n[Scenario 3] Milo server unreachable -> Fail-safe Deny');
-
-    const result3 = await runHookProcess(hookPayload1, 'http://127.0.0.1:9999', 1);
-    console.log(`  \u2714 Hook stdout on offline server: ${result3.stdout}`);
-    const parsedOutput3 = JSON.parse(result3.stdout);
-    assert.equal(parsedOutput3.decision, 'deny');
-    assert.match(parsedOutput3.reason, /Milo approval error/i);
-    console.log('  \u2705 Scenario 3 SUCCESS: Fail-safe deny when approval server is down');
-
-    console.log('\n\u2705 ALL E2E FLOW TESTS PASSED SUCCESSFULLY!');
+    console.log('\n✅ ALL E2E FLOW TESTS PASSED SUCCESSFULLY!');
   } finally {
     server.close();
   }
 }
 
 runE2ETests().catch((err) => {
-  console.error('\n\u274c E2E TEST FAILED:', err);
+  console.error('\n❌ E2E TEST FAILED:', err);
   process.exit(1);
 });

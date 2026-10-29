@@ -1,5 +1,5 @@
 {
-  "milo-approver": {
+  "arthur-approver": {
     "enabled": true,
     "PreToolUse": [
       {
@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node run-milo.js",
+            "command": "node run-arthur.js",
             "timeout": 180
           }
         ]
@@ -15,3 +15,4 @@
     ]
   }
 }
+

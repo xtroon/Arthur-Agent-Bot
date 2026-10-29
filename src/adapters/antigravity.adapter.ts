@@ -1,5 +1,5 @@
 import { AgentAdapter } from './adapter.interface.js';
-import { MiloDecision, MiloRequestInput, ActionType } from '../core/types.js';
+import { ArthurDecision, ArthurRequestInput, ActionType } from '../core/types.js';
 
 export interface AntigravityPreToolPayload {
   toolCall?: {
@@ -26,7 +26,7 @@ export interface AntigravityHookResponse {
 export class AntigravityAdapter implements AgentAdapter<AntigravityPreToolPayload, AntigravityHookResponse> {
   readonly agentName = 'antigravity';
 
-  parseInput(rawInput: AntigravityPreToolPayload): MiloRequestInput {
+  parseInput(rawInput: AntigravityPreToolPayload): ArthurRequestInput {
     const toolCall = rawInput.toolCall || { name: 'unknown', args: {} };
     const toolName = toolCall.name || 'unknown';
     const args = toolCall.args || {};
@@ -39,7 +39,7 @@ export class AntigravityAdapter implements AgentAdapter<AntigravityPreToolPayloa
       case 'run_command': {
         actionType = 'command';
         const cmd = args.CommandLine || args.command || '(empty command)';
-        summary = `Execute shell command: ${cmd}`;
+        summary = `Command: ${cmd}`;
         description = `Command: ${cmd}\nTool Summary: ${args.toolSummary || 'N/A'}`;
         break;
       }
@@ -89,7 +89,7 @@ export class AntigravityAdapter implements AgentAdapter<AntigravityPreToolPayloa
     };
   }
 
-  formatResponse(decision: MiloDecision, originalInput?: AntigravityPreToolPayload): AntigravityHookResponse {
+  formatResponse(decision: ArthurDecision, originalInput?: AntigravityPreToolPayload): AntigravityHookResponse {
     if (decision.decision === 'approved') {
       const response: AntigravityHookResponse = {
         decision: 'allow',
@@ -109,7 +109,7 @@ export class AntigravityAdapter implements AgentAdapter<AntigravityPreToolPayloa
 
     return {
       decision: 'deny',
-      reason: decision.reason || 'Action rejected by human operator in Milo approval layer.',
+      reason: decision.reason || 'Action rejected by human operator in Arthur approval layer.',
     };
   }
 }

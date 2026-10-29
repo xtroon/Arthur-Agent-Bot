@@ -13,6 +13,7 @@ export class RequestManager extends EventEmitter {
             toolName: input.toolName,
             summary: input.summary,
             description: input.description,
+            riskLevel: input.riskLevel || 'medium',
             payload: input.payload,
             context: input.context,
             status: 'pending',
@@ -39,7 +40,7 @@ export class RequestManager extends EventEmitter {
         request.status = decision;
         request.decisionReason = reason;
         request.resolvedAt = new Date().toISOString();
-        const miloDecision = {
+        const arthurDecision = {
             requestId: id,
             decision,
             reason,
@@ -48,9 +49,9 @@ export class RequestManager extends EventEmitter {
         if (pending) {
             clearTimeout(pending.timer);
             this.pendingWaits.delete(id);
-            pending.resolve(miloDecision);
+            pending.resolve(arthurDecision);
         }
-        this.emit('request_resolved', { request, decision: miloDecision });
+        this.emit('request_resolved', { request, decision: arthurDecision });
         return true;
     }
     waitForDecision(requestId, timeoutMs = 60000) {

@@ -1,5 +1,5 @@
 import { AgentAdapter } from './adapter.interface.js';
-import { MiloDecision, MiloRequestInput } from '../core/types.js';
+import { ArthurDecision, ArthurRequestInput } from '../core/types.js';
 export interface AntigravityPreToolPayload {
     toolCall?: {
         name: string;
@@ -22,6 +22,6 @@ export interface AntigravityHookResponse {
 }
 export declare class AntigravityAdapter implements AgentAdapter<AntigravityPreToolPayload, AntigravityHookResponse> {
     readonly agentName = "antigravity";
-    parseInput(rawInput: AntigravityPreToolPayload): MiloRequestInput;
-    formatResponse(decision: MiloDecision, originalInput?: AntigravityPreToolPayload): AntigravityHookResponse;
+    parseInput(rawInput: AntigravityPreToolPayload): ArthurRequestInput;
+    formatResponse(decision: ArthurDecision, originalInput?: AntigravityPreToolPayload): AntigravityHookResponse;
 }
